@@ -1,7 +1,9 @@
 CC = cc
-LIBS = -lX11 -lXrandr -lGL -lleif -lclipboard -lxcb -lm
+LIBS = -lX11 -lGL -lleif -lclipboard -lxcb -lxcb-randr -lm
 SRC = boron.c
 BIN = boron
 
 all:
 	${CC} -o ${BIN} ${SRC} ${LIBS}
+install:
+	cp boron /usr/bin
