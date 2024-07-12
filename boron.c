@@ -158,7 +158,7 @@ setglcontext(xcb_window_t win, Display* dsp, GLXContext context) {
 void
 eventloop(state_t* s) {
   xcb_generic_event_t* event;
-  while ((event = xcb_poll_for_event(s->conn))) {
+  while ((event = xcb_wait_for_event(s->conn))) {
     switch (event->response_type & ~0x80) {
       case XCB_EXPOSE:
         renderbar(s->bar, &s->ui, s->dsp);
@@ -189,7 +189,7 @@ renderbar(xcb_window_t bar, LfState* ui, Display* dsp) {
   {
     LfColor color = lf_color_from_hex(barcolor);
     vec4s zto = lf_color_to_zto(color);
-    glClearColor(zto.r, zto.g, zto.b, zto.a);
+    glClearColor(zto.r, zto.g, zto.b, 0.0);
     glClear(GL_COLOR_BUFFER_BIT);
   }
 
@@ -206,8 +206,8 @@ renderbar(xcb_window_t bar, LfState* ui, Display* dsp) {
     props.margin_top = 0;
     props.margin_left = 0;
     props.margin_right = 0;
-    props.color = isfocused ? LF_BLACK : LF_NO_COLOR;
-    props.text_color =  isfocused ? LF_WHITE : lf_color_from_hex(bartextcolor);
+    props.color = isfocused ? lf_color_from_hex(barcolor_desktop_focused) : LF_NO_COLOR;
+    props.text_color =  isfocused ? lf_color_from_hex(barcolor_desktop_focused_font) : lf_color_from_hex(bartextcolor);
     props.border_width = 0;
     lf_push_style_props(ui, props);
     lf_button_fixed(ui, desktops[i], barheight, barheight);
@@ -218,7 +218,6 @@ renderbar(xcb_window_t bar, LfState* ui, Display* dsp) {
   }
   lf_end(ui);
   glXSwapBuffers(dsp, bar);
-  glXWaitGL();
 }
 
 LfState
@@ -433,9 +432,7 @@ main() {
   renderbar(s.bar, &s.ui, s.dsp);
 
   // Main loop
-  while (1) {
-    eventloop(&s);
-  }
+  eventloop(&s);
 
   return 0;
 }
