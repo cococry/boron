@@ -4,6 +4,10 @@ SRC = boron.c
 BIN = boron
 
 all:
-	${CC} -o ${BIN} ${SRC} ${LIBS}
+	mkdir -p ./bin
+	${CC} -o ./bin/${BIN} ${SRC} ${LIBS}
 install:
-	cp boron /usr/bin
+	cp bin/${BIN} /usr/bin
+	cp scripts/* /usr/bin 
+	mkdir -p /usr/share/boron
+	mkdir -p /usr/share/boron/config

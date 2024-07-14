@@ -1,0 +1,3 @@
+pkill boron
+make -C /home/cococry/dev/boron
+boron &

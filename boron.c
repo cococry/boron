@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -16,6 +18,7 @@
 #include <xcb/xproto.h>
 
 #include "config.h"
+
 
 typedef enum {
   ewmh_atom_desktop_names = 0,
@@ -37,27 +40,35 @@ typedef struct {
   xcb_window_t bar;
   GLXContext glcontext;
 
+  area_t bararea;
+
   ewmh_atom_t ewmh_atoms[ewmh_atom_count];
 } state_t;
 
 static void         printerror(const char* message);
 static void         initxstate(state_t* s);
-static xcb_window_t createwin(area_t geom, uint32_t bw, xcb_connection_t* conn, xcb_screen_t* screen);
-static void         setbarclasshints(Display* dsp, xcb_window_t bar);
+static xcb_window_t createwin(area_t geom, uint32_t bw, uint32_t bc, xcb_connection_t* conn, xcb_screen_t* screen);
+static void         setbarclasshints(xcb_window_t bar, xcb_connection_t* conn); 
 
 static GLXContext   createglcontext(Display* dsp);
 static void         setglcontext(xcb_window_t win, Display* dsp, GLXContext context);
 static void         eventloop(state_t* s);
 
+static void         setbordercolor(xcb_connection_t* conn, xcb_window_t win, uint32_t color);
+
 static void         renderbar(xcb_window_t bar, LfState* ui, Display* dsp);
+static area_t       getbararea(xcb_connection_t* conn, xcb_screen_t* screen); 
 static LfState      initui(uint32_t winw, uint32_t winh);
 
 static area_t       getcursormon(xcb_connection_t* conn, xcb_screen_t* screen); 
 static char**       getdesktopnames(Display* dsp, uint32_t* o_numdesktops);
 static int32_t      getcurrentdesktop(Display* dsp);
 static xcb_atom_t   getatom(const char* atomstr, xcb_connection_t* conn);
+static void         setewmhstrut(xcb_window_t win, area_t area, xcb_connection_t* conn);
+static void         setwintypedock(xcb_window_t win, xcb_connection_t* conn, xcb_screen_t* screen);
 
 static int32_t      compstrs(const void* a, const void* b);
+static void         runcmd(const char* cmd);
 
 void 
 printerror(const char* message) {
@@ -90,7 +101,7 @@ initxstate(state_t* s) {
 }
 
 xcb_window_t 
-createwin(area_t geom, uint32_t bw, xcb_connection_t* conn, xcb_screen_t* screen) {
+createwin(area_t geom, uint32_t bw, uint32_t bc, xcb_connection_t* conn, xcb_screen_t* screen) {
   xcb_window_t win = xcb_generate_id(conn);
   uint32_t valmask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_OVERRIDE_REDIRECT;
   uint32_t vals[] = {
@@ -112,6 +123,8 @@ createwin(area_t geom, uint32_t bw, xcb_connection_t* conn, xcb_screen_t* screen
     valmask,vals 
   );
 
+  setbordercolor(conn, win, bc);
+
   xcb_map_window(conn, win);
   xcb_flush(conn);
 
@@ -119,13 +132,23 @@ createwin(area_t geom, uint32_t bw, xcb_connection_t* conn, xcb_screen_t* screen
 }
 
 void
-setbarclasshints(Display* dsp, xcb_window_t bar) {
-  XClassHint classhint;
-  classhint.res_name = "boron";
-  classhint.res_class = "Boron";
-  // Set the WM_CLASS property
-  Atom wmclass = XInternAtom(dsp, "WM_CLASS", False);
-  XSetClassHint(dsp, bar, &classhint);
+setbarclasshints(xcb_window_t bar, xcb_connection_t* conn) {
+  const char* resname = "boron";
+  const char* resclass = "Boron";
+
+  size_t len = strlen(resname) + strlen(resclass) + 2;  // +2 for the two null terminators
+
+  char* class = (char*)malloc(len);
+  if (!class) {
+    return;
+  }
+
+  snprintf(class, len, "%s%c%s%c", resname, '\0', resclass, '\0');
+
+  xcb_change_property(conn, XCB_PROP_MODE_REPLACE, bar, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, len, class);
+
+  free(class);
+  xcb_flush(conn);
 }
 
 GLXContext 
@@ -184,6 +207,11 @@ eventloop(state_t* s) {
   }
 }
 
+void 
+setbordercolor(xcb_connection_t* conn, xcb_window_t win, uint32_t color) {
+  xcb_change_window_attributes(conn, win, XCB_CW_BORDER_PIXEL, &color);
+}
+
 void
 renderbar(xcb_window_t bar, LfState* ui, Display* dsp) {
   {
@@ -210,14 +238,67 @@ renderbar(xcb_window_t bar, LfState* ui, Display* dsp) {
     props.text_color =  isfocused ? lf_color_from_hex(barcolor_desktop_focused_font) : lf_color_from_hex(bartextcolor);
     props.border_width = 0;
     lf_push_style_props(ui, props);
-    lf_button_fixed(ui, desktops[i], barheight, barheight);
+    lf_button_fixed(ui, desktops[i], barsize, barsize);
     lf_pop_style_props(ui);
+    if(barmode == BarLeft || barmode == BarRight) {
+      lf_next_line(ui);
+    }
   }
   for(uint32_t i = 0; i < numdesktops; i++) {
     free(desktops[i]);
   }
   lf_end(ui);
   glXSwapBuffers(dsp, bar);
+}
+
+area_t
+getbararea(xcb_connection_t* conn, xcb_screen_t* screen) {
+  area_t barmon = getcursormon(conn, screen);
+  area_t bararea;
+
+  switch(barmode) {
+    case BarLeft: {
+      bararea = (area_t){
+        barmon.x + barmargin,
+        barmon.y + barmargin,
+        barsize, 
+        barmon.height - (barmargin * 2)
+      };
+      break;
+    }
+    case BarRight: {
+      bararea = (area_t){
+        barmon.x + barmon.width - barsize - barmargin,
+        barmon.y + barmargin,
+        barsize, 
+        barmon.height - (barmargin * 2)
+      };
+      break;
+    }
+    case BarTop: {
+      bararea = (area_t){
+        barmon.x + barmargin,
+        barmon.y + barmargin,
+        barmon.width - (barmargin * 2),
+        barsize
+      };
+      break;
+    }
+    case BarBottom: {
+      bararea = (area_t){
+        barmon.x + barmargin,
+        barmon.y + barmon.height - barsize -barmargin,
+        barmon.width - (barmargin * 2),
+        barsize
+      };
+      break;
+    }
+    default: {
+      bararea = (area_t){0, 0, 0, 0};
+      break;
+    }
+  }
+  return bararea;
 }
 
 LfState
@@ -401,9 +482,89 @@ getatom(const char* atomstr, xcb_connection_t* conn) {
   return atom;
 }
 
+void 
+setewmhstrut(xcb_window_t win, area_t area, xcb_connection_t* conn) {
+  xcb_atom_t strutpartial_atom = getatom("_NET_WM_STRUT_PARTIAL", conn);
+  uint32_t strut[12] = {0};
+
+  switch(barmode) {
+    case BarLeft: {
+      // Space reserved on the left
+      strut[0] = area.width + barmargin * 2; 
+      // Left start Y
+      strut[4] = area.y;
+      // Left end Y
+      strut[5] = area.height - barmargin; 
+      break;
+    }
+    case BarRight: {
+      // Space reserved on the right 
+      strut[1] = area.width + barmargin * 2; 
+      // Right start Y
+      strut[6] = area.y;
+      // Left Right end Y
+      strut[7] = area.height - barmargin; 
+      break;
+    }
+    case BarTop: {
+      // Space reserved on the top 
+      strut[2] = area.height + barmargin * 2; 
+      // Top start X
+      strut[8] = area.x;
+      // Top end X
+      strut[9] = area.width - barmargin; 
+      break;
+    }
+    case BarBottom: {
+      // Space reserved on the bottom 
+      strut[3] = area.height + barmargin * 2; 
+      // Top start X
+      strut[10] = area.x;
+      // Top end X
+      strut[11] = area.width - barmargin; 
+      break;
+    }
+  }
+  xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, strutpartial_atom, XCB_ATOM_CARDINAL, 32, 12, strut);
+  xcb_flush(conn);
+}
+
+void 
+setwintypedock(xcb_window_t win, xcb_connection_t* conn, xcb_screen_t* screen) {
+  xcb_atom_t wintype_atom = getatom("_NET_WM_WINDOW_TYPE", conn);
+  xcb_atom_t docktype_atom = getatom("_NET_WM_WINDOW_TYPE_DOCK", conn);
+  xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, wintype_atom, XCB_ATOM_ATOM, 32, 1, &docktype_atom);
+  xcb_flush(conn);
+}
 int32_t 
 compstrs(const void* a, const void* b) {
   return strcmp(*(const char **)a, *(const char **)b);
+}
+
+void
+runcmd(const char* cmd) {
+  if (cmd == NULL) {
+    return;
+  }
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    // Child process
+    execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+    // If execl fails
+    fprintf(stderr, "boron: failed to execute command.\n");
+    _exit(EXIT_FAILURE);
+  } else if (pid > 0) {
+    // Parent process
+    int32_t status;
+    waitpid(pid, &status, 0);
+    return;
+  } else {
+    // Fork failed
+    perror("fork");
+    fprintf(stderr, "boron: failed to execute command.\n");
+    return;
+  }
 }
 
 int
@@ -411,23 +572,20 @@ main() {
   state_t s;
   initxstate(&s);
 
-  area_t barmon = getcursormon(s.conn, s.screen);
-  area_t bararea = (area_t){
-    barmon.x + barmargin,
-    barmon.y + barmargin,
-    barmon.width - (barmargin * 2),
-    barheight
-  };
-  s.bar = createwin(bararea, 
-                    barborderwidth,
+  s.bararea = getbararea(s.conn, s.screen);
+
+  s.bar = createwin(s.bararea, 
+                    barborderwidth, barbordercolor,
                     s.conn, s.screen);
 
-  setbarclasshints(s.dsp, s.bar);
+  setbarclasshints(s.bar, s.conn);
+  setewmhstrut(s.bar, s.bararea, s.conn);
+  setwintypedock(s.bar, s.conn, s.screen);
 
   s.glcontext = createglcontext(s.dsp);
   setglcontext(s.bar, s.dsp, s.glcontext);
 
-  s.ui = initui(bararea.width, bararea.height);
+  s.ui = initui(s.bararea.width, s.bararea.height);
 
   renderbar(s.bar, &s.ui, s.dsp);
 
