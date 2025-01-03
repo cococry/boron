@@ -1,13 +1,8 @@
-CC = cc
-LIBS = -lX11 -lGL -lleif -lclipboard -lxcb -lxcb-randr -lm
-SRC = boron.c
-BIN = boron
+CC			= gcc
+BIN			= boron
+DEPLIBS = -lrunara -lfreetype -lharfbuzz -lfontconfig -lm -lGL -lglfw -lX11 -lxcb -lxcb-randr
+CFLAGS	= -DLF_X11 -DLF_RUNARA -ffast-math -O3 -pedantic  -g
+LIBS 		=-L../lib -lleif  ${DEPLIBS} 
 
 all:
-	mkdir -p ./bin
-	${CC} -o ./bin/${BIN} ${SRC} ${LIBS}
-install:
-	cp bin/${BIN} /usr/bin
-	cp scripts/* /usr/bin 
-	mkdir -p /usr/share/boron
-	mkdir -p /usr/share/boron/config
+	${CC} -o bin/${BIN}  ${CFLAGS}  *.c ${LIBS}

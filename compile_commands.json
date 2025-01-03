@@ -1,0 +1,20 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-DLF_X11",
+      "-DLF_RUNARA",
+      "-ffast-math",
+      "-O3",
+      "-pedantic",
+      "-g",
+      "-o",
+      "bin/boron",
+      "boron.c"
+    ],
+    "directory": "/home/cococry/dev/boron-re",
+    "file": "/home/cococry/dev/boron-re/boron.c",
+    "output": "/home/cococry/dev/boron-re/bin/boron"
+  }
+]
