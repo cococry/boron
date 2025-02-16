@@ -13,15 +13,21 @@
 #include <leif/widget.h>
 #include <leif/widgets/text.h>
 #include <leif/win.h>
-#include <runara/runara.h>
+
 #include <xcb/xcb.h>
 #include <xcb/randr.h>
 #include <xcb/xproto.h>
 
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+
+
+
 #include "config.h"
 
 typedef enum {
-  ewmh_atom_desktop_names = 0,
+  ewmh_atom_none = 0,
+  ewmh_atom_desktop_names,
   ewmh_atom_current_desktop,
   ewmh_atom_count
 } ewmh_atom_t;
@@ -36,11 +42,16 @@ typedef struct {
   xcb_screen_t* screen;
   lf_ui_state_t* ui;
 
-  lf_div_t* barstart, *barcenter, *barend;
+
+  area_t bararea;
+
+  uint32_t crntdesktop;
+  char** desktopnames;
+  uint32_t numdesktops;
 
   xcb_atom_t ewmh_atoms[ewmh_atom_count];
 
-  area_t bararea;
+  lf_div_t* div_desktops;
 } state_t;
 
 static state_t s;
@@ -56,10 +67,17 @@ static void setewmhstrut(xcb_window_t win, area_t area, xcb_connection_t* conn);
 
 static char* getcmdoutput(const char* command);
 
+static void querydesktops(state_t* s);
+static int32_t getcurrentdesktop(Display* dsp);
+static char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops);
+
+static void uidesktops(state_t* s);
+
 void 
 initxstate(state_t* s) {
   if(!s) return;
-  
+ 
+  memset(s, 0, sizeof(s));
   s->conn = xcb_connect(NULL, NULL);
   if (xcb_connection_has_error(s->conn)) {
     printerror("Unable to open XCB connection");
@@ -72,6 +90,8 @@ initxstate(state_t* s) {
   uint32_t values[] = { XCB_EVENT_MASK_PROPERTY_CHANGE };
   xcb_change_window_attributes(s->conn, s->screen->root, XCB_CW_EVENT_MASK, values);
 
+
+  memset(s->ewmh_atoms, ewmh_atom_none, sizeof(s->ewmh_atoms));
   s->ewmh_atoms[ewmh_atom_desktop_names]    = getatom("_NET_DESKTOP_NAMES", s->conn);
   s->ewmh_atoms[ewmh_atom_current_desktop]  = getatom("_NET_CURRENT_DESKTOP", s->conn);
 }
@@ -349,22 +369,168 @@ getcmdoutput(const char* command) {
   return result;
 }
 
-void updatebar(lf_ui_state_t* ui, lf_timer_t* updatetimer) {
-  (void)updatetimer;
-  uint32_t idxstart = 0, idxcenter = 0, idxend = 0; 
-  for(uint32_t i = 0; i < (sizeof(cmds) / sizeof(displayed_command_t)); i++) {
-    char* text = getcmdoutput(cmds[i].cmd);
-    if(cmds[i].pos == BarPosStart) {
-    lf_text_set_label(ui, (lf_text_t*)s.barstart->base.childs[idxstart++], text); 
-    }
-    if(cmds[i].pos == BarPosCenter) {
-    lf_text_set_label(ui, (lf_text_t*)s.barcenter->base.childs[idxcenter++], text); 
-    }
-    if(cmds[i].pos == BarPosEnd) {
-    lf_text_set_label(ui, (lf_text_t*)s.barend->base.childs[idxend++], text); 
+void 
+querydesktops(state_t* s) {
+  uint32_t numdesktopsbefore = s->numdesktops;
+  uint32_t crntdesktopbefore = s->crntdesktop;
+  s->desktopnames = getdesktopnames(lf_win_get_display(), &s->numdesktops);
+  s->crntdesktop = getcurrentdesktop(lf_win_get_display());
+  if((s->numdesktops != numdesktopsbefore || 
+      s->crntdesktop != crntdesktopbefore)) { 
+    if(s->div_desktops) {
+      lf_widget_remove(&s->div_desktops->base);
+      uidesktops(s);
+      lf_ui_core_rerender_widget(s->ui, &s->div_desktops->base);
     }
   }
-    lf_ui_core_submit(ui);
+}
+
+void uidesktops(state_t* s) {
+  s->div_desktops = lf_div(s->ui);
+  lf_widget_set_fixed_height(lf_crnt(s->ui), barsize);
+  lf_style_crnt_widget_prop(s->ui, padding_top, 0); 
+  lf_style_crnt_widget_prop(s->ui, padding_bottom, 0); 
+  lf_crnt(s->ui)->sizing_type = SizingFitToContent;
+  lf_widget_set_layout(lf_crnt(s->ui), LayoutHorizontal);
+  lf_widget_set_alignment(lf_crnt(s->ui), 
+      AlignCenterVertical);
+
+  lf_style_crnt_widget_prop(s->ui, padding_left, 20); 
+  lf_style_crnt_widget_prop(s->ui, padding_right, 20); 
+
+  static uint32_t desktopsize = 10;
+  for(uint32_t i = 0; i < s->numdesktops; i++) {
+    lf_div(s->ui);
+    lf_widget_set_padding(lf_crnt(s->ui), 0);
+    lf_widget_set_margin(lf_crnt(s->ui), 0);
+    lf_style_crnt_widget_prop(s->ui, margin_right, 10);
+    if(i == s->crntdesktop)
+      lf_widget_set_fixed_width(lf_crnt(s->ui), desktopsize * 2.5);
+    else 
+      lf_widget_set_fixed_width(lf_crnt(s->ui), desktopsize);
+    lf_widget_set_fixed_height(lf_crnt(s->ui), desktopsize);
+    lf_style_crnt_widget_prop(s->ui, color, 
+        (i != s->crntdesktop) ? 
+        lf_color_from_hex(0xbdbdbd) :
+        lf_color_from_hex(0xd9d9d9));
+    lf_style_crnt_widget_prop(s->ui, corner_radius, desktopsize / 2); 
+    lf_div_end(s->ui);
+  }
+
+  lf_div_end(s->ui);
+}
+
+void evcallback(void* ev) {
+  XEvent* xev = (XEvent*)ev;
+  switch(xev->type) {
+    case PropertyNotify: 
+      {
+        XPropertyEvent *property_notify = (XPropertyEvent*)xev;
+
+        if (property_notify->window == DefaultRootWindow(lf_win_get_display())) {
+          bool is_interesting = false;
+
+          for (uint32_t i = 0; i < ewmh_atom_count; i++) {
+            if (s.ewmh_atoms[i] == property_notify->atom) {
+              is_interesting = true;
+              break;
+            }
+          }
+
+          if (is_interesting) {
+            querydesktops(&s);
+          }
+        }
+        break;
+      }
+  }
+}
+
+
+char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops) {
+  Atom netdesktopnames;
+  Atom type;
+  int format;
+  unsigned long nitems, bytes;
+  unsigned char *data = NULL;
+
+  netdesktopnames = XInternAtom(dsp, "_NET_DESKTOP_NAMES", False);
+
+  if (XGetWindowProperty(dsp, DefaultRootWindow(dsp), netdesktopnames,
+        0, 0x7FFFFFFF, False, XA_STRING, &type, &format,
+        &nitems, &bytes, &data) != Success) {
+    printerror("Failed to get _NET_DESKTOP_NAMES property.\n");
+    return NULL;
+  }
+
+  if (type != XA_STRING || format != 8) {
+    printerror("_NET_DESKTOP_NAMES property has unexpected type or format.\n");
+    XFree(data);
+    return NULL;
+  }
+
+  char *data_ptr = (char *)data;
+  int count = 0;
+  for (char *p = data_ptr; p < data_ptr + nitems; ++p) {
+    if (*p == '\0') {
+      ++count;
+    }
+  }
+  if(count == s.numdesktops) return s.desktopnames;
+  char **names = (char **)malloc(count * sizeof(char *));
+  if (names == NULL) {
+    fprintf(stderr, "Memory allocation failed\n");
+    XFree(data);
+    return NULL;
+  }
+
+  int index = 0;
+  char *name_start = data_ptr;
+  for (char *p = data_ptr; p < data_ptr + nitems; ++p) {
+    if (*p == '\0') {
+      names[index] = strndup(name_start, p - name_start);
+      if (names[index] == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        for (int j = 0; j < index; ++j) {
+          free(names[j]);
+        }
+        free(names);
+        XFree(data);
+        return NULL;
+      }
+      ++index;
+      name_start = p + 1;
+    }
+  }
+
+  XFree(data);
+  *o_numdesktops = count;
+
+  return names;
+}
+
+int32_t
+getcurrentdesktop(Display* dsp) {
+  Atom netcurrentdesktop;
+  Atom type;
+  int format;
+  unsigned long nitems, bytes;
+  unsigned char* prop;
+  netcurrentdesktop = XInternAtom(dsp, "_NET_CURRENT_DESKTOP", False);
+
+  if (XGetWindowProperty(dsp, DefaultRootWindow(dsp), 
+        netcurrentdesktop, 0, 1, False, XA_CARDINAL,
+        &type, &format, 
+        &nitems, &bytes, &prop) != Success 
+      || type != XA_CARDINAL || nitems != 1) {
+    fprintf(stderr, "Failed to get the _NET_CURRENT_DESKTOP property.\n");
+    return -1; 
+  }
+
+  int currentdesktop = *(long*)prop;
+  XFree(prop);
+
+  return currentdesktop;
 }
 
 int main(void) {
@@ -381,68 +547,37 @@ int main(void) {
   lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_X, s.bararea.x);
   lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_Y, s.bararea.y);
   lf_window_t win = lf_ui_core_create_window(s.bararea.width, s.bararea.height, "Boron Bar");
+  XSelectInput(lf_win_get_display(), DefaultRootWindow(lf_win_get_display()), PropertyChangeMask);
 
   setbarclasshints((xcb_window_t)win, s.conn);
   setewmhstrut((xcb_window_t)win, s.bararea, s.conn);
   setwintypedock((xcb_window_t)win, s.conn, s.screen);
 
   s.ui = lf_ui_core_init(win);
- 
-  lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
-  lf_ui_core_set_font(s.ui, "/usr/share/fonts/inter/InterNerdFontPropo-SemiBold.otf");
+  lf_style_crnt_widget_prop(s.ui, color, lf_color_from_hex(barcolor));
 
-  lf_style_crnt_widget_prop(s.ui, color, lf_color_from_hex(0x171717));
+  querydesktops(&s);
 
   lf_div(s.ui);
-  lf_style_crnt_widget_prop(s.ui, padding_left, 15.0f);
-  lf_style_crnt_widget_prop(s.ui, padding_right, 15.0f);
-  lf_widget_set_fixed_width_percent(lf_crnt(s.ui), 100.0f);
+  lf_widget_set_alignment(lf_crnt(s.ui), 
+      AlignCenterVertical);
+  lf_widget_set_padding(lf_crnt(s.ui), 0);
+  lf_widget_set_margin(lf_crnt(s.ui), 0);
 
-  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
-
-  lf_crnt(s.ui)->justify_type = JustifySpaceBetween;
-
-  s.barstart = lf_div(s.ui);
-  lf_crnt(s.ui)->sizing_type = SizingFitToContent;
-  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
-  for(uint32_t i = 0; i < (sizeof(cmds) / sizeof(cmds[0])); i++) {
-    if(cmds[i].pos != BarPosStart) continue;
-    char* text = getcmdoutput(cmds[i].cmd);
-    lf_text_h4(s.ui,text);
-  }
-  lf_div_end(s.ui);
-
-  s.barcenter = lf_div(s.ui);
-  lf_crnt(s.ui)->sizing_type = SizingFitToContent;
-  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
-  for(uint32_t i = 0; i < (sizeof(cmds) / sizeof(cmds[0])); i++) {
-    if(cmds[i].pos != BarPosCenter) continue;
-    char* text = getcmdoutput(cmds[i].cmd);
-    lf_text_h4(s.ui,text);
-  }
-  lf_div_end(s.ui);
-
-  s.barend = lf_div(s.ui);
-  lf_crnt(s.ui)->sizing_type = SizingFitToContent;
-  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
-  for(uint32_t i = 0; i < (sizeof(cmds) / sizeof(cmds[0])); i++) {
-    if(cmds[i].pos != BarPosEnd) continue;
-    char* text = getcmdoutput(cmds[i].cmd);
-    lf_text_h4(s.ui,text);
-  }
-  lf_div_end(s.ui);
-
-  lf_ui_core_start_timer_looped(s.ui, 1.0f, updatebar);
+  lf_windowing_set_event_cb(evcallback);
+  
+  uidesktops(&s);
 
   lf_div_end(s.ui);
-
-  lf_widget_shape(s.ui, s.ui->root);
  
   while(s.ui->running) {
     lf_ui_core_next_event(s.ui);
   }
  
   lf_ui_core_terminate(s.ui);
+
+  if(s.desktopnames)
+    free(s.desktopnames);
 
   return EXIT_SUCCESS;
 }
