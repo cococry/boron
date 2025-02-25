@@ -71,13 +71,13 @@ static void querydesktops(state_t* s);
 static int32_t getcurrentdesktop(Display* dsp);
 static char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops);
 
-static void uidesktops(state_t* s);
+static void uidesktops(void);
 
 void 
 initxstate(state_t* s) {
   if(!s) return;
  
-  memset(s, 0, sizeof(s));
+  memset(s, 0, sizeof(*s));
   s->conn = xcb_connect(NULL, NULL);
   if (xcb_connection_has_error(s->conn)) {
     printerror("Unable to open XCB connection");
@@ -378,47 +378,39 @@ querydesktops(state_t* s) {
   if((s->numdesktops != numdesktopsbefore || 
       s->crntdesktop != crntdesktopbefore)) { 
     if(s->div_desktops) {
-      lf_widget_remove(&s->div_desktops->base);
-      uidesktops(s);
-      lf_ui_core_rerender_widget(s->ui, &s->div_desktops->base);
+      lf_component_rerender(s->ui, uidesktops);
     }
   }
 }
 
-void uidesktops(state_t* s) {
-  s->div_desktops = lf_div(s->ui);
-  lf_widget_set_fixed_height(lf_crnt(s->ui), barsize);
-  lf_style_crnt_widget_prop(s->ui, padding_top, 0); 
-  lf_style_crnt_widget_prop(s->ui, padding_bottom, 0); 
-  lf_crnt(s->ui)->sizing_type = SizingFitToContent;
-  lf_widget_set_layout(lf_crnt(s->ui), LayoutHorizontal);
-  lf_widget_set_alignment(lf_crnt(s->ui), 
-      AlignCenterVertical);
+void uidesktops(void) {
+ s.div_desktops = lf_div(s.ui);
+  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
+  lf_crnt(s.ui)->sizing_type = SizingFitToContent;
+  for(uint32_t i = 0; i < s.numdesktops; i++) {
+    lf_button(s.ui);
+    lf_widget_set_transition_props(lf_crnt(s.ui), 0.2, lf_ease_out_quad);
+    lf_widget_set_fixed_width(lf_crnt(s.ui), 10);
+    lf_widget_set_fixed_height(lf_crnt(s.ui), 10);
+    lf_widget_set_prop_color(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.color, 
+                             i == s.crntdesktop ? lf_color_from_hex(0xffffff) :  lf_color_from_hex(0xcccccc));
 
-  lf_style_crnt_widget_prop(s->ui, padding_left, 20); 
-  lf_style_crnt_widget_prop(s->ui, padding_right, 20); 
+    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.padding_top, 0); 
+    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.padding_bottom, 0); 
 
-  static uint32_t desktopsize = 10;
-  for(uint32_t i = 0; i < s->numdesktops; i++) {
-    lf_div(s->ui);
-    lf_widget_set_padding(lf_crnt(s->ui), 0);
-    lf_widget_set_margin(lf_crnt(s->ui), 0);
-    lf_style_crnt_widget_prop(s->ui, margin_right, 10);
-    if(i == s->crntdesktop)
-      lf_widget_set_fixed_width(lf_crnt(s->ui), desktopsize * 2.5);
-    else 
-      lf_widget_set_fixed_width(lf_crnt(s->ui), desktopsize);
-    lf_widget_set_fixed_height(lf_crnt(s->ui), desktopsize);
-    lf_style_crnt_widget_prop(s->ui, color, 
-        (i != s->crntdesktop) ? 
-        lf_color_from_hex(0xbdbdbd) :
-        lf_color_from_hex(0xd9d9d9));
-    lf_style_crnt_widget_prop(s->ui, corner_radius, desktopsize / 2); 
-    lf_div_end(s->ui);
+    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.padding_left, i == s.crntdesktop ? 10 : 0);
+    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.padding_right, i == s.crntdesktop ? 10 : 0);
+    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.corner_radius, 10 / 2.0f); 
+
+    lf_button_end(s.ui);
+ 
   }
 
-  lf_div_end(s->ui);
-}
+  char buf[64];
+  sprintf(buf, "Current: %i", s.crntdesktop);
+  lf_text_h4(s.ui, buf);
+  lf_div_end(s.ui);
+ }
 
 void evcallback(void* ev) {
   XEvent* xev = (XEvent*)ev;
@@ -554,19 +546,20 @@ int main(void) {
   setwintypedock((xcb_window_t)win, s.conn, s.screen);
 
   s.ui = lf_ui_core_init(win);
-  lf_style_crnt_widget_prop(s.ui, color, lf_color_from_hex(barcolor));
+  lf_widget_set_prop_color(s.ui, lf_crnt(s.ui), 
+                           &lf_crnt(s.ui)->props.color, lf_color_from_hex(barcolor));
 
   querydesktops(&s);
 
   lf_div(s.ui);
   lf_widget_set_alignment(lf_crnt(s.ui), 
       AlignCenterVertical);
-  lf_widget_set_padding(lf_crnt(s.ui), 0);
-  lf_widget_set_margin(lf_crnt(s.ui), 0);
+  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+  lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
 
   lf_windowing_set_event_cb(evcallback);
   
-  uidesktops(&s);
+  lf_component(s.ui, uidesktops);
 
   lf_div_end(s.ui);
  
