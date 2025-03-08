@@ -1,3 +1,5 @@
+#include <stdint.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <sys/wait.h>
 
@@ -13,15 +15,15 @@
 #include <leif/widget.h>
 #include <leif/widgets/text.h>
 #include <leif/win.h>
-
-#include <xcb/xcb.h>
-#include <xcb/randr.h>
-#include <xcb/xproto.h>
+#include <X11/extensions/Xinerama.h>
+#include <errno.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 
-
+#define INTERSECT(x,y,w,h,r)  (MAX(0, MIN((x)+(w),(r).x_org+(r).width)  - MAX((x),(r).x_org))) 
+#define ATTR_RERTIES 100
+#define ATTR_RETRY_DELAY 50000 // 50ms 
 
 #include "config.h"
 
@@ -38,8 +40,8 @@ typedef struct {
 } area_t;
 
 typedef struct {
-  xcb_connection_t* conn;
-  xcb_screen_t* screen;
+  Display* dpy;
+  Window root;
   lf_ui_state_t* ui;
 
 
@@ -49,21 +51,22 @@ typedef struct {
   char** desktopnames;
   uint32_t numdesktops;
 
-  xcb_atom_t ewmh_atoms[ewmh_atom_count];
+  Atom ewmh_atoms[ewmh_atom_count];
 
   lf_div_t* div_desktops;
 } state_t;
 
 static state_t s;
 
+static void fail(const char *fmt, ...);
 static void initxstate(state_t* s);
 static void printerror(const char* message);
-static xcb_atom_t getatom(const char* atomstr, xcb_connection_t* conn);
-static area_t getcursormon(xcb_connection_t* conn, xcb_screen_t* screen);
-static area_t getbararea(xcb_connection_t* conn, xcb_screen_t* screen, area_t barmon);
-static void setbarclasshints(xcb_window_t bar, xcb_connection_t* conn);
-static void setwintypedock(xcb_window_t win, xcb_connection_t* conn, xcb_screen_t* screen);
-static void setewmhstrut(xcb_window_t win, area_t area, xcb_connection_t* conn);
+static Atom getatom(const char* atomstr, Display* dpy);
+static area_t getbararea(area_t barmon);
+static void setbarclasshints(Window bar, Display* dpy);
+static void setwintypedock(Window win, Display* dpy);
+static void setewmhstrut(Window, area_t area, Display* dpy);
+static area_t getfocusedmon(Display* dpy, Window root);
 
 static char* getcmdoutput(const char* command);
 
@@ -73,27 +76,39 @@ static char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops);
 
 static void uidesktops(void);
 
+void
+fail(const char *fmt, ...)
+{
+  /* Taken from dmenu */
+	va_list ap;
+	int saved_errno;
+
+	saved_errno = errno;
+
+	va_start(ap, fmt);
+	vfprintf(stderr, "boron: ", ap);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+
+	if (fmt[0] && fmt[strlen(fmt)-1] == ':')
+		fprintf(stderr, "%s", strerror(saved_errno));
+	fputc('\n', stderr);
+
+	exit(EXIT_FAILURE);
+}
+
 void 
 initxstate(state_t* s) {
   if(!s) return;
- 
   memset(s, 0, sizeof(*s));
-  s->conn = xcb_connect(NULL, NULL);
-  if (xcb_connection_has_error(s->conn)) {
-    printerror("Unable to open XCB connection");
+  if(!(s->dpy = XOpenDisplay(NULL))) {
+    fail("cannot open X display.");
   }
-
-  const xcb_setup_t* setup = xcb_get_setup(s->conn);
-  xcb_screen_iterator_t iter = xcb_setup_roots_iterator(setup);
-  s->screen = iter.data;
-
-  uint32_t values[] = { XCB_EVENT_MASK_PROPERTY_CHANGE };
-  xcb_change_window_attributes(s->conn, s->screen->root, XCB_CW_EVENT_MASK, values);
-
+  s->root = DefaultRootWindow(s->dpy);
 
   memset(s->ewmh_atoms, ewmh_atom_none, sizeof(s->ewmh_atoms));
-  s->ewmh_atoms[ewmh_atom_desktop_names]    = getatom("_NET_DESKTOP_NAMES", s->conn);
-  s->ewmh_atoms[ewmh_atom_current_desktop]  = getatom("_NET_CURRENT_DESKTOP", s->conn);
+  s->ewmh_atoms[ewmh_atom_desktop_names]    = getatom("_NET_DESKTOP_NAMES", s->dpy);
+  s->ewmh_atoms[ewmh_atom_current_desktop]  = getatom("_NET_CURRENT_DESKTOP", s->dpy);
 }
 
 void 
@@ -103,85 +118,14 @@ printerror(const char* message) {
 }
 
 
-xcb_atom_t
-getatom(const char* atomstr, xcb_connection_t* conn) {
-  xcb_intern_atom_cookie_t cookie = xcb_intern_atom(conn, 0, strlen(atomstr), atomstr);
-  xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(conn, cookie, NULL);
-  xcb_atom_t atom = reply ? reply->atom : XCB_ATOM_NONE;
-  free(reply);
-  return atom;
+Atom getatom(const char* atomstr, Display* display) {
+    Atom atom = XInternAtom(display, atomstr, False);
+    return atom;
 }
 
 
 area_t
-getcursormon(xcb_connection_t* conn, xcb_screen_t* screen) {
-  area_t monarea = {0, 0, 0, 0};
-
-  // Query pointer
-  xcb_query_pointer_cookie_t ptrcookie = xcb_query_pointer(conn, screen->root);
-  xcb_query_pointer_reply_t* ptrreply = xcb_query_pointer_reply(conn, ptrcookie, NULL);
-
-  if (!ptrreply) {
-    printerror("unable to query pointer.\n");
-    xcb_disconnect(conn);
-    return monarea;
-  }
-
-  // Get screen resources
-  xcb_randr_get_screen_resources_current_cookie_t rescookie = xcb_randr_get_screen_resources_current(conn, screen->root);
-  xcb_randr_get_screen_resources_current_reply_t* resreply = xcb_randr_get_screen_resources_current_reply(conn, rescookie, NULL);
-
-  if (!resreply) {
-    printerror("unable to get screen resources\n");
-    free(ptrreply);
-    xcb_disconnect(conn);
-    return monarea;
-  }
-
-  int noutputs = xcb_randr_get_screen_resources_current_outputs_length(resreply);
-  xcb_randr_output_t* outputs = xcb_randr_get_screen_resources_current_outputs(resreply);
-
-  for (int i = 0; i < noutputs; ++i) {
-    xcb_randr_get_output_info_cookie_t outputinfocookie = xcb_randr_get_output_info(conn, outputs[i], XCB_CURRENT_TIME);
-    xcb_randr_get_output_info_reply_t* outputinforeply = xcb_randr_get_output_info_reply(conn, outputinfocookie, NULL);
-
-    if (!outputinforeply || outputinforeply->crtc == XCB_NONE) {
-      free(outputinforeply);
-      continue;
-    }
-
-    xcb_randr_get_crtc_info_cookie_t crtcinfocookie = xcb_randr_get_crtc_info(conn, outputinforeply->crtc, XCB_CURRENT_TIME);
-    xcb_randr_get_crtc_info_reply_t* crtcinforeply = xcb_randr_get_crtc_info_reply(conn, crtcinfocookie, NULL);
-
-    if (!crtcinforeply) {
-      free(outputinforeply);
-      continue;
-    }
-
-    if (ptrreply->root_x >= crtcinforeply->x && ptrreply->root_x < crtcinforeply->x + crtcinforeply->width &&
-      ptrreply->root_y >= crtcinforeply->y && ptrreply->root_y < crtcinforeply->y + crtcinforeply->height) {
-      monarea.x = crtcinforeply->x;
-      monarea.y = crtcinforeply->y;
-      monarea.width = crtcinforeply->width;
-      monarea.height = crtcinforeply->height;
-      free(crtcinforeply);
-      free(outputinforeply);
-      break;
-    }
-
-    free(crtcinforeply);
-    free(outputinforeply);
-  }
-
-  free(resreply);
-  free(ptrreply);
-
-  return monarea;
-}
-
-
-area_t
-getbararea(xcb_connection_t* conn, xcb_screen_t* screen, area_t barmon) {
+getbararea(area_t barmon) {
   area_t bararea;
 
   switch(barmode) {
@@ -231,57 +175,56 @@ getbararea(xcb_connection_t* conn, xcb_screen_t* screen, area_t barmon) {
 
 
 void 
-setbarclasshints(xcb_window_t bar, xcb_connection_t* conn) {
+setbarclasshints(Window bar, Display* dpy) {
   const char* resname = "boron";
   const char* resclass = "Boron";
-
   size_t len = strlen(resname) + strlen(resclass) + 2;  // +2 for the two null terminators
 
   char* class = (char*)malloc(len);
   if (!class) {
     return;
   }
-
   snprintf(class, len, "%s%c%s%c", resname, '\0', resclass, '\0');
 
-  xcb_change_property(conn, XCB_PROP_MODE_REPLACE, bar, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, len, class);
+  XChangeProperty(dpy, bar, XA_WM_CLASS, XA_STRING, 8, PropModeReplace, (unsigned char*)class, len);
+  XFlush(dpy);
 
   free(class);
-  xcb_flush(conn);
 }
 
 void 
-setwintypedock(xcb_window_t win, xcb_connection_t* conn, xcb_screen_t* screen) {
-  xcb_atom_t wintype_atom = getatom("_NET_WM_WINDOW_TYPE", conn);
-  xcb_atom_t docktype_atom = getatom("_NET_WM_WINDOW_TYPE_DOCK", conn);
-  xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, wintype_atom, XCB_ATOM_ATOM, 32, 1, &docktype_atom);
-  xcb_flush(conn);
+setwintypedock(Window win, Display* dpy) {
+  Atom wintype_atom = getatom("_NET_WM_WINDOW_TYPE", dpy);
+  Atom docktype_atom = getatom("_NET_WM_WINDOW_TYPE_DOCK", dpy);
+  XChangeProperty(dpy, win, wintype_atom, XA_ATOM, 32, PropModeReplace, (unsigned char*)&docktype_atom, 1);
+  XFlush(dpy);  
+
 }
 
-void 
-setewmhstrut(xcb_window_t win, area_t area, xcb_connection_t* conn) {
- xcb_atom_t strutpartial_atom = getatom("_NET_WM_STRUT_PARTIAL", conn);
-  uint32_t strut[12] = {0};
+void setewmhstrut(Window win, area_t area, Display* dpy) {
+Atom strutpartial_atom = XInternAtom(s.dpy, "_NET_WM_STRUT_PARTIAL", False);
 
-  switch(barmode) {
+unsigned long strut[12] = {0};
+
+switch (barmode) {
     case BarLeft: {
-      // Space reserved on the left
-      strut[0] = area.width + barmargin * 2; 
-      break;
+        // Space reserved on the left
+        strut[0] = area.width + barmargin * 2;
+        break;
     }
     case BarRight: {
-      // Space reserved on the right 
-      strut[1] = area.width + barmargin * 2; 
-           break;
+        // Space reserved on the right
+        strut[1] = area.width + barmargin * 2;
+        break;
     }
     case BarTop: {
-      // Space reserved on the top 
-      strut[2] = area.height + barmargin * 2; 
-      break;
+        // Space reserved on the top
+        strut[2] = area.height + barmargin * 2;
+        break;
     }
     case BarBottom: {
-      // Space reserved on the bottom 
-      strut[3] = area.height + barmargin * 2; 
+      // Space reserved on the bottom
+      strut[3] = area.height + barmargin * 2;
       break;
     }
   }
@@ -293,19 +236,20 @@ setewmhstrut(xcb_window_t win, area_t area, xcb_connection_t* conn) {
   // Right start Y
   strut[6] = area.y;
   // Right end Y
-  strut[7] = area.y + area.height - barmargin; 
+  strut[7] = area.y + area.height - barmargin;
   // Top start X
   strut[8] = area.x;
   // Top end X
-  strut[9] = area.x + area.width - barmargin; 
+  strut[9] = area.x + area.width - barmargin;
   // Top start X
   strut[10] = area.x;
   // Top end X
   strut[11] = area.x + area.width - barmargin;
 
-  xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, strutpartial_atom, XCB_ATOM_CARDINAL, 32, 12, strut);
-  xcb_flush(conn);
+  XChangeProperty(s.dpy, win, strutpartial_atom, XA_CARDINAL, 32, PropModeReplace, (unsigned char*)strut, 12);
+  XFlush(s.dpy); 
 }
+
 
 int32_t 
 compstrs(const void* a, const void* b) {
@@ -384,33 +328,35 @@ querydesktops(state_t* s) {
 }
 
 void uidesktops(void) {
+  printf("Component rendered.\n");
  s.div_desktops = lf_div(s.ui);
   lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
   lf_crnt(s.ui)->sizing_type = SizingFitToContent;
   for(uint32_t i = 0; i < s.numdesktops; i++) {
     lf_button(s.ui);
-    lf_widget_set_transition_props(lf_crnt(s.ui), 0.2, lf_ease_out_quad);
-    lf_widget_set_fixed_width(lf_crnt(s.ui), 10);
-    lf_widget_set_fixed_height(lf_crnt(s.ui), 10);
-    lf_widget_set_prop_color(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.color, 
-                             i == s.crntdesktop ? lf_color_from_hex(0xffffff) :  lf_color_from_hex(0xcccccc));
+    //lf_widget_set_transition_props(lf_crnt(s.ui), 0.2, lf_ease_out_quad);
+    lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 10);
+    lf_widget_set_fixed_height(s.ui, lf_crnt(s.ui), 10);
 
-    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.padding_top, 0); 
-    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.padding_bottom, 0); 
+    lf_style_widget_prop_color(
+      s.ui, lf_crnt(s.ui), color, 
+      i == s.crntdesktop ? 
+      lf_color_from_hex(0xffffff) :  
+      lf_color_from_hex(0xcccccc));
 
-    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.padding_left, i == s.crntdesktop ? 10 : 0);
-    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.padding_right, i == s.crntdesktop ? 10 : 0);
-    lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.corner_radius, 10 / 2.0f); 
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), padding_top, 0); 
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), padding_bottom, 0); 
+
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), padding_left, i == s.crntdesktop ? 10 : 0);
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), padding_right, i == s.crntdesktop ? 10 : 0);
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius, 10 / 2.0f); 
 
     lf_button_end(s.ui);
  
   }
 
-  char buf[64];
-  sprintf(buf, "Current: %i", s.crntdesktop);
-  lf_text_h4(s.ui, buf);
   lf_div_end(s.ui);
- }
+}
 
 void evcallback(void* ev) {
   XEvent* xev = (XEvent*)ev;
@@ -438,26 +384,28 @@ void evcallback(void* ev) {
   }
 }
 
-
 char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops) {
-  Atom netdesktopnames;
+  Atom netdesktopnames = XInternAtom(dsp, "_NET_DESKTOP_NAMES", False);
   Atom type;
   int format;
   unsigned long nitems, bytes;
   unsigned char *data = NULL;
 
-  netdesktopnames = XInternAtom(dsp, "_NET_DESKTOP_NAMES", False);
-
-  if (XGetWindowProperty(dsp, DefaultRootWindow(dsp), netdesktopnames,
-        0, 0x7FFFFFFF, False, XA_STRING, &type, &format,
-        &nitems, &bytes, &data) != Success) {
-    printerror("Failed to get _NET_DESKTOP_NAMES property.\n");
-    return NULL;
+  int retries = 0;
+  while (retries < ATTR_RERTIES) {
+    if (XGetWindowProperty(dsp, DefaultRootWindow(dsp), netdesktopnames,
+                           0, 0x7FFFFFFF, False, XA_STRING, &type, &format,
+                           &nitems, &bytes, &data) == Success && type == XA_STRING && format == 8) {
+      break;
+    }
+    if (data) XFree(data);
+    data = NULL;
+    usleep(ATTR_RETRY_DELAY);  
+    retries++;
   }
 
-  if (type != XA_STRING || format != 8) {
-    printerror("_NET_DESKTOP_NAMES property has unexpected type or format.\n");
-    XFree(data);
+  if (!data) {
+    printerror("Failed to get _NET_DESKTOP_NAMES property of root window.\n");
     return NULL;
   }
 
@@ -468,10 +416,10 @@ char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops) {
       ++count;
     }
   }
-  if(count == s.numdesktops) return s.desktopnames;
+
   char **names = (char **)malloc(count * sizeof(char *));
   if (names == NULL) {
-    fprintf(stderr, "Memory allocation failed\n");
+    fail("malloc:\n");
     XFree(data);
     return NULL;
   }
@@ -482,7 +430,7 @@ char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops) {
     if (*p == '\0') {
       names[index] = strndup(name_start, p - name_start);
       if (names[index] == NULL) {
-        fprintf(stderr, "Memory allocation failed\n");
+        fail("strndup:\n");
         for (int j = 0; j < index; ++j) {
           free(names[j]);
         }
@@ -497,9 +445,10 @@ char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops) {
 
   XFree(data);
   *o_numdesktops = count;
-
   return names;
 }
+
+
 
 int32_t
 getcurrentdesktop(Display* dsp) {
@@ -507,49 +456,119 @@ getcurrentdesktop(Display* dsp) {
   Atom type;
   int format;
   unsigned long nitems, bytes;
-  unsigned char* prop;
+  unsigned char* data;
   netcurrentdesktop = XInternAtom(dsp, "_NET_CURRENT_DESKTOP", False);
 
-  if (XGetWindowProperty(dsp, DefaultRootWindow(dsp), 
-        netcurrentdesktop, 0, 1, False, XA_CARDINAL,
-        &type, &format, 
-        &nitems, &bytes, &prop) != Success 
-      || type != XA_CARDINAL || nitems != 1) {
-    fprintf(stderr, "Failed to get the _NET_CURRENT_DESKTOP property.\n");
-    return -1; 
+  int retries = 0;
+  bool success = false;
+  while (retries < ATTR_RERTIES) {
+    if (XGetWindowProperty(dsp, DefaultRootWindow(dsp), 
+                           netcurrentdesktop, 0, 1, False, XA_CARDINAL,
+                           &type, &format, 
+                           &nitems, &bytes, &data) == Success 
+      && type == XA_CARDINAL && nitems == 1) {
+      success = true;
+      break;
+    }
+    if (data) XFree(data);
+    data = NULL;
+    usleep(ATTR_RETRY_DELAY);  
+    retries++;
+  }
+  if(!data) {
+    fprintf(stderr, "Failed to get _NET_CURRENT_DESKTOP property of root window.\n");
+    return 0;
   }
 
-  int currentdesktop = *(long*)prop;
-  XFree(prop);
-
+  int currentdesktop = *(long*)data;
+  XFree(data);
   return currentdesktop;
 }
 
+
+area_t getfocusmon(state_t* s) {
+  /* Taken from dmenu */
+	int monx, mony, monw, monh; 
+	Window rootret;
+  uint32_t selectedmon;
+  int32_t nmons;
+	XineramaScreenInfo* screeninfo = XineramaQueryScreens(s->dpy, &nmons);
+  int32_t greatestarea = 0;
+  if(!screeninfo) {
+    fail("cannot retrieve xinerama screens.");
+  }
+  Window focus;
+  int32_t focusstate;
+  XGetInputFocus(s->dpy, &focus, &focusstate);
+  if (barmon >= 0 && barmon < nmons)
+    selectedmon = barmon;
+  else if (focus != s->root && focus != PointerRoot && focus != None) {
+    Window* childs;
+    uint32_t nchilds;
+    Window focusparent;
+    do {
+      focusparent = focus;
+      if (XQueryTree(s->dpy, focus, &rootret, &focus, &childs, &nchilds) && childs)
+        XFree(childs);
+    } while (focus != s->root && focus != focusparent);
+    XWindowAttributes attr;
+    if (!XGetWindowAttributes(s->dpy, focusparent, &attr)) {
+      fail("failed to get window attributes of computed focus parent.");
+    }
+    for (uint32_t i = 0; i < nmons; i++) {
+      int32_t area  = INTERSECT(attr.x, attr.y, attr.width, attr.height, screeninfo[i]);
+      if (area > greatestarea) {
+        greatestarea = area;
+        selectedmon = i;
+      }
+    }
+  }
+  uint32_t maskreturn;
+  int32_t cursorx, cursory;
+  if (barmon < 0 && !greatestarea && XQueryPointer(
+    s->dpy, s->root, &rootret, &rootret,
+    &cursorx, &cursory, &focusstate, &focusstate, &maskreturn)) {
+    for (uint32_t i = 0; i < nmons; i++) {
+      if (INTERSECT(cursorx, cursory, 1, 1, screeninfo[i]) != 0) {
+        selectedmon = i;
+        break;
+      }
+    }
+  }
+
+  monx = screeninfo[selectedmon].x_org;
+  mony = screeninfo[selectedmon].y_org; 
+  monw = screeninfo[selectedmon].width;
+  monh = screeninfo[selectedmon].height;
+  XFree(screeninfo);
+
+  return (area_t){
+    monx, mony, 
+    monw, monh
+  };
+}
+
 int main(void) {
-
-  if(lf_windowing_init() != 0) return EXIT_FAILURE;
-
   initxstate(&s);
+  if(lf_windowing_init() != 0) {
+    fail("cannot initialize libleif windowing backend.");
+  }
 
-  area_t barmon = getcursormon(s.conn, s.screen);
+  area_t barmon = getfocusmon(&s);
+  s.bararea = getbararea(barmon);
 
-  s.bararea = getbararea(s.conn, s.screen, barmon);
-
-  lf_ui_core_set_window_flags(LF_WINDOWING_X11_OVERRIDE_REDIRECT);
   lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_X, s.bararea.x);
-  lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_Y, s.bararea.y);
-  lf_window_t win = lf_ui_core_create_window(s.bararea.width, s.bararea.height, "Boron Bar");
+  lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_Y, s.bararea.y); 
+  lf_ui_core_set_window_flags(LF_WINDOWING_X11_OVERRIDE_REDIRECT);
+  lf_window_t win = lf_ui_core_create_window(s.bararea.width, s.bararea.height, "Born Bar");
   XSelectInput(lf_win_get_display(), DefaultRootWindow(lf_win_get_display()), PropertyChangeMask);
 
-  setbarclasshints((xcb_window_t)win, s.conn);
-  setewmhstrut((xcb_window_t)win, s.bararea, s.conn);
-  setwintypedock((xcb_window_t)win, s.conn, s.screen);
+  setbarclasshints(win, s.dpy);
+  setewmhstrut(win, s.bararea, s.dpy);
+  setwintypedock(win, s.dpy);
 
   s.ui = lf_ui_core_init(win);
-  lf_widget_set_prop_color(s.ui, lf_crnt(s.ui), 
-                           &lf_crnt(s.ui)->props.color, lf_color_from_hex(barcolor));
-
-  querydesktops(&s);
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, lf_color_from_hex(barcolor));
 
   lf_div(s.ui);
   lf_widget_set_alignment(lf_crnt(s.ui), 
@@ -560,17 +579,16 @@ int main(void) {
   lf_windowing_set_event_cb(evcallback);
   
   lf_component(s.ui, uidesktops);
+  querydesktops(&s);
 
   lf_div_end(s.ui);
- 
+
+
   while(s.ui->running) {
     lf_ui_core_next_event(s.ui);
   }
- 
-  lf_ui_core_terminate(s.ui);
 
-  if(s.desktopnames)
-    free(s.desktopnames);
+  lf_ui_core_terminate(s.ui);
 
   return EXIT_SUCCESS;
 }

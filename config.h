@@ -40,6 +40,8 @@ static displayed_command_t cmds[] = {
   },
 };
 
+
+static const int32_t    barmon          = -1;
 static const barmode_t  barmode         = BarTop; 
 static const uint32_t   barmargin       = 5;
 static const uint32_t   barsize         = 40;
