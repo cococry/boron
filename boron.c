@@ -80,21 +80,21 @@ void
 fail(const char *fmt, ...)
 {
   /* Taken from dmenu */
-	va_list ap;
-	int saved_errno;
+  va_list ap;
+  int saved_errno;
 
-	saved_errno = errno;
+  saved_errno = errno;
 
-	va_start(ap, fmt);
-	vfprintf(stderr, "boron: ", ap);
-	vfprintf(stderr, fmt, ap);
-	va_end(ap);
+  va_start(ap, fmt);
+  vfprintf(stderr, "boron: ", ap);
+  vfprintf(stderr, fmt, ap);
+  va_end(ap);
 
-	if (fmt[0] && fmt[strlen(fmt)-1] == ':')
-		fprintf(stderr, "%s", strerror(saved_errno));
-	fputc('\n', stderr);
+  if (fmt[0] && fmt[strlen(fmt)-1] == ':')
+    fprintf(stderr, "%s", strerror(saved_errno));
+  fputc('\n', stderr);
 
-	exit(EXIT_FAILURE);
+  exit(EXIT_FAILURE);
 }
 
 void 
@@ -119,8 +119,8 @@ printerror(const char* message) {
 
 
 Atom getatom(const char* atomstr, Display* display) {
-    Atom atom = XInternAtom(display, atomstr, False);
-    return atom;
+  Atom atom = XInternAtom(display, atomstr, False);
+  return atom;
 }
 
 
@@ -202,25 +202,25 @@ setwintypedock(Window win, Display* dpy) {
 }
 
 void setewmhstrut(Window win, area_t area, Display* dpy) {
-Atom strutpartial_atom = XInternAtom(s.dpy, "_NET_WM_STRUT_PARTIAL", False);
+  Atom strutpartial_atom = XInternAtom(s.dpy, "_NET_WM_STRUT_PARTIAL", False);
 
-unsigned long strut[12] = {0};
+  unsigned long strut[12] = {0};
 
-switch (barmode) {
+  switch (barmode) {
     case BarLeft: {
-        // Space reserved on the left
-        strut[0] = area.width + barmargin * 2;
-        break;
+      // Space reserved on the left
+      strut[0] = area.width + barmargin * 2;
+      break;
     }
     case BarRight: {
-        // Space reserved on the right
-        strut[1] = area.width + barmargin * 2;
-        break;
+      // Space reserved on the right
+      strut[1] = area.width + barmargin * 2;
+      break;
     }
     case BarTop: {
-        // Space reserved on the top
-        strut[2] = area.height + barmargin * 2;
-        break;
+      // Space reserved on the top
+      strut[2] = area.height + barmargin * 2;
+      break;
     }
     case BarBottom: {
       // Space reserved on the bottom
@@ -320,40 +320,47 @@ querydesktops(state_t* s) {
   s->desktopnames = getdesktopnames(lf_win_get_display(), &s->numdesktops);
   s->crntdesktop = getcurrentdesktop(lf_win_get_display());
   if((s->numdesktops != numdesktopsbefore || 
-      s->crntdesktop != crntdesktopbefore)) { 
+    s->crntdesktop != crntdesktopbefore)) { 
     if(s->div_desktops) {
       lf_component_rerender(s->ui, uidesktops);
     }
   }
 }
 
+void on_hover(lf_ui_state_t* ui, lf_widget_t* widget) {
+  lf_widget_set_padding(ui, widget, 5);
+  lf_style_widget_prop(s.ui, widget, corner_radius, 20 / 2.0f);
+}
+void on_leave(lf_ui_state_t* ui, lf_widget_t* widget) {
+  lf_widget_set_padding(ui, widget, 0);
+  lf_style_widget_prop(s.ui, widget, corner_radius, 10 / 2.0f);
+}
+
+int n = 0;
 void uidesktops(void) {
-  printf("Component rendered.\n");
- s.div_desktops = lf_div(s.ui);
+  s.div_desktops = lf_div(s.ui);
   lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
-  lf_crnt(s.ui)->sizing_type = SizingFitToContent;
-  for(uint32_t i = 0; i < s.numdesktops; i++) {
+  lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_RED);
+  lf_widget_set_fixed_height_percent(s.ui, lf_crnt(s.ui), 100.0f);
+  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+  lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
+  /*for(uint32_t i = 0; i < n; i++) {
     lf_button(s.ui);
-    //lf_widget_set_transition_props(lf_crnt(s.ui), 0.2, lf_ease_out_quad);
+    //lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
+    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color,
+                               (i == s.crntdesktop ? LF_WHITE : lf_color_from_hex(0x999999)));
+    lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
     lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 10);
     lf_widget_set_fixed_height(s.ui, lf_crnt(s.ui), 10);
-
-    lf_style_widget_prop_color(
-      s.ui, lf_crnt(s.ui), color, 
-      i == s.crntdesktop ? 
-      lf_color_from_hex(0xffffff) :  
-      lf_color_from_hex(0xcccccc));
-
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), padding_top, 0); 
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), padding_bottom, 0); 
-
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), padding_left, i == s.crntdesktop ? 10 : 0);
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), padding_right, i == s.crntdesktop ? 10 : 0);
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius, 10 / 2.0f); 
-
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius, 10 / 2.0f);
+    ((lf_button_t*)lf_crnt(s.ui))->on_enter = on_hover;
+    ((lf_button_t*)lf_crnt(s.ui))->on_leave = on_leave;
     lf_button_end(s.ui);
- 
-  }
+  }*/
+  lf_button(s.ui);
+  lf_text_h4(s.ui, "click");
+  lf_button_end(s.ui);
 
   lf_div_end(s.ui);
 }
@@ -488,11 +495,11 @@ getcurrentdesktop(Display* dsp) {
 
 area_t getfocusmon(state_t* s) {
   /* Taken from dmenu */
-	int monx, mony, monw, monh; 
-	Window rootret;
+  int monx, mony, monw, monh; 
+  Window rootret;
   uint32_t selectedmon;
   int32_t nmons;
-	XineramaScreenInfo* screeninfo = XineramaQueryScreens(s->dpy, &nmons);
+  XineramaScreenInfo* screeninfo = XineramaQueryScreens(s->dpy, &nmons);
   int32_t greatestarea = 0;
   if(!screeninfo) {
     fail("cannot retrieve xinerama screens.");
@@ -571,15 +578,17 @@ int main(void) {
   lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, lf_color_from_hex(barcolor));
 
   lf_div(s.ui);
-  lf_widget_set_alignment(lf_crnt(s.ui), 
-      AlignCenterVertical);
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
   lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
+  lf_widget_set_fixed_height_percent(s.ui, lf_crnt(s.ui), 100.0f);
+  lf_widget_set_alignment(lf_crnt(s.ui), 
+                          AlignCenterVertical);
 
   lf_windowing_set_event_cb(evcallback);
-  
-  lf_component(s.ui, uidesktops);
+
   querydesktops(&s);
+
+  lf_component(s.ui, uidesktops);
 
   lf_div_end(s.ui);
 
@@ -592,4 +601,3 @@ int main(void) {
 
   return EXIT_SUCCESS;
 }
-
