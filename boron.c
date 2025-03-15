@@ -26,6 +26,7 @@
 #define ATTR_RETRY_DELAY 50000 // 50ms 
 
 #include "config.h"
+int desktops = 1;
 
 typedef enum {
   ewmh_atom_none = 0,
@@ -66,7 +67,7 @@ static area_t getbararea(area_t barmon);
 static void setbarclasshints(Window bar, Display* dpy);
 static void setwintypedock(Window win, Display* dpy);
 static void setewmhstrut(Window, area_t area, Display* dpy);
-static area_t getfocusedmon(Display* dpy, Window root);
+static lf_window_t createuiwin(state_t* s);
 
 static char* getcmdoutput(const char* command);
 
@@ -75,6 +76,10 @@ static int32_t getcurrentdesktop(Display* dsp);
 static char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops);
 
 static void uidesktops(void);
+static void uicmds(void);
+static void vseperator(void);
+static void evcallback(void* ev);
+static area_t getfocusmon(state_t* s);
 
 void
 fail(const char *fmt, ...)
@@ -250,6 +255,20 @@ void setewmhstrut(Window win, area_t area, Display* dpy) {
   XFlush(s.dpy); 
 }
 
+lf_window_t
+createuiwin(state_t* s) {
+  area_t barmon = getfocusmon(s);
+  s->bararea = getbararea(barmon);
+
+  lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_X, s->bararea.x);
+  lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_Y, s->bararea.y); 
+  lf_ui_core_set_window_flags(LF_WINDOWING_X11_OVERRIDE_REDIRECT);
+  lf_window_t win = lf_ui_core_create_window(s->bararea.width, s->bararea.height, "Boron Bar");
+  XSelectInput(lf_win_get_display(), DefaultRootWindow(lf_win_get_display()), PropertyChangeMask);
+  lf_windowing_set_event_cb(evcallback);
+
+  return win;
+}
 
 int32_t 
 compstrs(const void* a, const void* b) {
@@ -322,6 +341,7 @@ querydesktops(state_t* s) {
   if((s->numdesktops != numdesktopsbefore || 
     s->crntdesktop != crntdesktopbefore)) { 
     if(s->div_desktops) {
+      desktops++;
       lf_component_rerender(s->ui, uidesktops);
     }
   }
@@ -329,40 +349,68 @@ querydesktops(state_t* s) {
 
 void on_hover(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_widget_set_padding(ui, widget, 5);
-  lf_style_widget_prop(s.ui, widget, corner_radius, 20 / 2.0f);
+  lf_style_widget_prop(s.ui, widget, corner_radius, 30 / 2.0);
 }
 void on_leave(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_widget_set_padding(ui, widget, 0);
-  lf_style_widget_prop(s.ui, widget, corner_radius, 10 / 2.0f);
+  lf_style_widget_prop(s.ui, widget, corner_radius, 20 / 2.0);
 }
 
-int n = 0;
+
 void uidesktops(void) {
   s.div_desktops = lf_div(s.ui);
   lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
+  lf_widget_set_sizing(lf_crnt(s.ui), SizingFitToContent);
   lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
-  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_RED);
-  lf_widget_set_fixed_height_percent(s.ui, lf_crnt(s.ui), 100.0f);
-  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
-  lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
-  /*for(uint32_t i = 0; i < n; i++) {
+
+  for(uint32_t i = 0; i < s.numdesktops; i++) {
     lf_button(s.ui);
-    //lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
+    lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
     lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color,
                                (i == s.crntdesktop ? LF_WHITE : lf_color_from_hex(0x999999)));
     lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
-    lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 10);
-    lf_widget_set_fixed_height(s.ui, lf_crnt(s.ui), 10);
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius, 10 / 2.0f);
+    lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), i == s.crntdesktop ? 55 : 20);
+    lf_widget_set_fixed_height(s.ui, lf_crnt(s.ui), 20);
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius, 20 / 2.0);
     ((lf_button_t*)lf_crnt(s.ui))->on_enter = on_hover;
     ((lf_button_t*)lf_crnt(s.ui))->on_leave = on_leave;
+
+    lf_text_p(s.ui, s.desktopnames[i]);
+    lf_crnt(s.ui)->visible = i == s.crntdesktop;
+
     lf_button_end(s.ui);
-  }*/
-  lf_button(s.ui);
-  lf_text_h4(s.ui, "click");
-  lf_button_end(s.ui);
+  }
+  lf_div_end(s.ui);
+}
+
+void uicmds(void) {
+  lf_div(s.ui);
+  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
+  lf_widget_set_sizing(lf_crnt(s.ui), SizingFitToContent);
+  lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
+
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(0x333333));
+  
+  lf_text_sized(s.ui, "  28%", 20);
+  lf_text_sized(s.ui, "󰁾 29%", 20);
+  lf_text_sized(s.ui, getcmdoutput("date +\"%H:%M\""), 20);
+
+  
 
   lf_div_end(s.ui);
+
+  lf_div_end(s.ui);
+}
+
+void vseperator(void) {
+  float font_height = ((lf_text_t*)lf_crnt(s.ui))->font.pixel_size; 
+  lf_button(s.ui);
+
+  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+  lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 2);
+  lf_widget_set_fixed_height(s.ui, lf_crnt(s.ui), font_height);
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_WHITE);
+  lf_button_end(s.ui);
 }
 
 void evcallback(void* ev) {
@@ -561,37 +609,44 @@ int main(void) {
     fail("cannot initialize libleif windowing backend.");
   }
 
-  area_t barmon = getfocusmon(&s);
-  s.bararea = getbararea(barmon);
-
-  lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_X, s.bararea.x);
-  lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_Y, s.bararea.y); 
-  lf_ui_core_set_window_flags(LF_WINDOWING_X11_OVERRIDE_REDIRECT);
-  lf_window_t win = lf_ui_core_create_window(s.bararea.width, s.bararea.height, "Born Bar");
-  XSelectInput(lf_win_get_display(), DefaultRootWindow(lf_win_get_display()), PropertyChangeMask);
-
+  lf_window_t win = createuiwin(&s);
+  
   setbarclasshints(win, s.dpy);
   setewmhstrut(win, s.bararea, s.dpy);
   setwintypedock(win, s.dpy);
 
   s.ui = lf_ui_core_init(win);
-  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, lf_color_from_hex(barcolor));
 
-  lf_div(s.ui);
-  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
-  lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
-  lf_widget_set_fixed_height_percent(s.ui, lf_crnt(s.ui), 100.0f);
-  lf_widget_set_alignment(lf_crnt(s.ui), 
-                          AlignCenterVertical);
-
-  lf_windowing_set_event_cb(evcallback);
+  lf_widget_set_font_family(s.ui, s.ui->root, "JetBrainsMono Nerd Font");
+  lf_widget_set_font_style(s.ui, s.ui->root, LF_FONT_STYLE_BOLD);
 
   querydesktops(&s);
 
+  lf_div(s.ui);
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, lf_color_from_hex(barcolor));
+  lf_widget_set_fixed_height_percent(s.ui, lf_crnt(s.ui), 100.0f);
+  lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
+  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+
+  lf_div(s.ui);
+  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
+  lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
   lf_component(s.ui, uidesktops);
+
+  lf_div(s.ui);
+  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
+  lf_widget_set_sizing(lf_crnt(s.ui), SizingGrow);
+  lf_div_end(s.ui);
+
+
+  lf_component(s.ui, uicmds);
 
   lf_div_end(s.ui);
 
+  lf_widget_invalidate_size_and_layout(s.ui->root);
+  lf_widget_shape(s.ui, s.ui->root);
+  lf_widget_invalidate_size_and_layout(s.ui->root);
+  lf_widget_shape(s.ui, s.ui->root);
 
   while(s.ui->running) {
     lf_ui_core_next_event(s.ui);

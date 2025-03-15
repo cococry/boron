@@ -43,11 +43,11 @@ static displayed_command_t cmds[] = {
 
 static const int32_t    barmon          = -1;
 static const barmode_t  barmode         = BarTop; 
-static const uint32_t   barmargin       = 5;
-static const uint32_t   barsize         = 100;
+static const uint32_t   barmargin       = 10;
+static const uint32_t   barsize         = 50;
 static const uint32_t   barborderwidth  = 0;
 static const uint32_t   barbordercolor  = 0x555555;
-static const uint32_t   barcolor        = 0x181818;
+static const uint32_t   barcolor        = 0xE6DFDC;
 static const uint32_t   barcolor_desktop_focused = 0xfbf1c7;
 static const uint32_t   barcolor_desktop_focused_font = 0x282828;
 static const bool       bartransparent  = false; 
