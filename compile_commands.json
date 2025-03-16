@@ -13,8 +13,8 @@
       "bin/boron",
       "boron.c"
     ],
-    "directory": "/home/cococry/dev/boron-re",
-    "file": "/home/cococry/dev/boron-re/boron.c",
-    "output": "/home/cococry/dev/boron-re/bin/boron"
+    "directory": "/home/cococry/dev/boron",
+    "file": "/home/cococry/dev/boron/boron.c",
+    "output": "/home/cococry/dev/boron/bin/boron"
   }
 ]

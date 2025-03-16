@@ -1,25 +1,17 @@
+#include <leif/widget.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
 #include <sys/wait.h>
 
-#include <leif/color.h>
 #include <leif/ez_api.h>
-#include <leif/layout.h>
-#include <leif/leif.h>
 
-#include <leif/render.h>
-#include <leif/timer.h>
-#include <leif/ui_core.h>
-#include <leif/util.h>
-#include <leif/widget.h>
-#include <leif/widgets/text.h>
-#include <leif/win.h>
-#include <X11/extensions/Xinerama.h>
-#include <errno.h>
+#include <ragnar/api.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
+#include <X11/extensions/Xinerama.h>
 
 #define INTERSECT(x,y,w,h,r)  (MAX(0, MIN((x)+(w),(r).x_org+(r).width)  - MAX((x),(r).x_org))) 
 #define ATTR_RERTIES 100
@@ -348,12 +340,18 @@ querydesktops(state_t* s) {
 }
 
 void on_hover(lf_ui_state_t* ui, lf_widget_t* widget) {
-  lf_widget_set_padding(ui, widget, 5);
-  lf_style_widget_prop(s.ui, widget, corner_radius, 30 / 2.0);
+  lf_widget_set_prop(ui, widget, &widget->props.padding_top,5);
+  lf_widget_set_prop(ui, widget, &widget->props.padding_bottom,5);
+  lf_widget_set_fixed_width(ui, widget, 55);
+  lf_widget_set_prop(ui, widget, &widget->props.corner_radius, 30.0f/2.0f);
+  lf_widget_set_visible(widget->childs[0], true);
 }
 void on_leave(lf_ui_state_t* ui, lf_widget_t* widget) {
-  lf_widget_set_padding(ui, widget, 0);
-  lf_style_widget_prop(s.ui, widget, corner_radius, 20 / 2.0);
+  lf_component_rerender(s.ui, uidesktops); // Back to initial state
+}
+
+void on_click(lf_ui_state_t* ui, lf_widget_t* widget) {
+  rg_cmd_switch_desktop(*(int32_t*)widget->user_data);
 }
 
 
@@ -365,15 +363,20 @@ void uidesktops(void) {
 
   for(uint32_t i = 0; i < s.numdesktops; i++) {
     lf_button(s.ui);
+    lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
     lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
     lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color,
                                (i == s.crntdesktop ? LF_WHITE : lf_color_from_hex(0x999999)));
-    lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+    
     lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), i == s.crntdesktop ? 55 : 20);
     lf_widget_set_fixed_height(s.ui, lf_crnt(s.ui), 20);
     lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius, 20 / 2.0);
     ((lf_button_t*)lf_crnt(s.ui))->on_enter = on_hover;
     ((lf_button_t*)lf_crnt(s.ui))->on_leave = on_leave;
+    ((lf_button_t*)lf_crnt(s.ui))->on_click = on_click;
+    uint32_t* data = malloc(sizeof(uint32_t));
+    *data = i;
+    lf_crnt(s.ui)->user_data = data;
 
     lf_text_p(s.ui, s.desktopnames[i]);
     lf_crnt(s.ui)->visible = i == s.crntdesktop;
@@ -616,6 +619,7 @@ int main(void) {
   setwintypedock(win, s.dpy);
 
   s.ui = lf_ui_core_init(win);
+
 
   lf_widget_set_font_family(s.ui, s.ui->root, "JetBrainsMono Nerd Font");
   lf_widget_set_font_style(s.ui, s.ui->root, LF_FONT_STYLE_BOLD);
