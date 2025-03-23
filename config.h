@@ -58,12 +58,14 @@ typedef struct {
   Atom ewmh_atoms[ewmh_atom_count];
 
   lf_div_t* div_desktops;
+
+  char** cmdoutputs;
 } state_t;
 
 static barcmd_t barcmds[] = {
   {
-    .cmd ="bar-battery",
-    .update_interval_secs = 10.0f
+    .cmd ="boron-weather",
+    .update_interval_secs = 300.0f
   },
   {
     .cmd ="date +\"󰥔 %H:%M\"",
@@ -90,7 +92,7 @@ void bar_style_widget(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_style_widget_prop_color(ui, widget, color, lf_color_from_hex(barcolor_primary)); 
   lf_style_widget_prop_color(ui, widget, border_color, lf_color_from_hex(barcolor_secondary)); 
   lf_style_widget_prop(ui, widget, border_width, 3);
-  lf_style_widget_prop(ui, widget, corner_radius, 20);
+  lf_style_widget_prop(ui, widget, corner_radius_percent, 50);
   lf_widget_set_padding(ui, widget, 5);
   lf_style_widget_prop(ui, widget, padding_left, 20);
   lf_style_widget_prop(ui, widget, padding_right, 20);
@@ -159,7 +161,7 @@ void bar_desktop_design(lf_ui_state_t* ui, uint32_t desktop, uint32_t crntdeskto
         ui, lf_crnt(ui), 
         desktop == crntdesktop ? 55 : 20);
     lf_widget_set_fixed_height(ui, lf_crnt(ui), 20);
-    lf_style_widget_prop(ui, lf_crnt(ui), corner_radius, 20 / 2.0);
+    lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent,50.0);
     ((lf_button_t*)lf_crnt(ui))->on_enter = bar_desktop_hover;
     ((lf_button_t*)lf_crnt(ui))->on_leave = bar_desktop_leave;
     ((lf_button_t*)lf_crnt(ui))->on_click = bar_desktop_click;

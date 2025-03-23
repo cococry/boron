@@ -8,4 +8,5 @@ all:
 	${CC} -o bin/${BIN}  ${CFLAGS}  *.c ${LIBS}
 
 install:
-	cp ./bin/boron /usr/bin 
+	cp ./bin/boron /usr/bin
+	cp ./scripts/* /usr/bin

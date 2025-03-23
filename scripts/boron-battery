@@ -1,0 +1,43 @@
+
+#!/bin/bash
+# Get battery information using upower
+battery_info=$(upower -i /org/freedesktop/UPower/devices/battery_BAT0 2>/dev/null)
+
+# Check if the device has a battery
+if ! ls /sys/class/power_supply/BAT* 1> /dev/null 2>&1; then
+    battery=100
+else
+    # Extract the battery percentage
+    battery=$(echo "$battery_info" | grep -E 'percentage' | awk '{print $2}' | tr -d '%')
+
+    # If the battery is close to 100%, round it up
+    if [ "$battery" -ge 99 ]; then
+        battery=100
+    fi
+fi
+
+# Determine the appropriate icon based on the battery percentage
+if [ "$battery" -eq 100 ]; then
+    icon="󰁹"
+elif [ "$battery" -ge 90 ]; then
+    icon="󰂂"
+elif [ "$battery" -ge 70 ]; then
+    icon="󰂁"
+elif [ "$battery" -ge 60 ]; then
+    icon="󰂀"
+elif [ "$battery" -ge 50 ]; then
+    icon="󰁿"
+elif [ "$battery" -ge 40 ]; then
+    icon="󰁾"
+elif [ "$battery" -ge 30 ]; then
+    icon="󰁽"
+elif [ "$battery" -ge 20 ]; then
+    icon="󰁼"
+elif [ "$battery" -ge 10 ]; then
+    icon="󰁻"
+else
+    icon="󰁺"
+fi
+
+# Display the icon with the battery percentage
+echo "$icon $battery%"
