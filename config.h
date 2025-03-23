@@ -4,6 +4,7 @@
 #include <leif/ez_api.h>
 #include <leif/layout.h>
 #include <leif/ui_core.h>
+#include <ragnar/api.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -60,11 +61,14 @@ typedef struct {
 } state_t;
 
 static barcmd_t barcmds[] = {
-  
   {
-    .cmd ="date +\"%H:%M\"",
+    .cmd ="bar-battery",
+    .update_interval_secs = 10.0f
+  },
+  {
+    .cmd ="date +\"󰥔 %H:%M\"",
     .update_interval_secs = 1.0f
-  }
+  },
 };
 
 static state_t s;
@@ -123,12 +127,12 @@ void set_prop(lf_widget_t* widget, float* prop, float val) {
 void bar_desktop_hover(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_widget_set_prop(ui, widget, &widget->props.padding_left, 5);
   lf_widget_set_prop(ui, widget, &widget->props.padding_right,5);
-  if(*(int32_t*)widget->user_data != s.crntdesktop) {
-    lf_widget_set_prop_color(ui, widget, &widget->props.color, lf_color_dim(lf_color_from_hex(barcolor_secondary) , 0.5));
-    lf_widget_set_prop_color(ui, widget->childs[0], &widget->childs[0]->props.text_color, LF_WHITE); 
-  }
   lf_widget_set_fixed_width(ui, widget, 55);
   lf_widget_set_visible(widget->childs[0], true);
+  lf_style_widget_prop_color(
+    ui, widget, color, 
+    lf_color_dim(lf_color_from_hex(barcolor_secondary), 150.0f)
+  );
 }
 
 void bar_desktop_leave(lf_ui_state_t* ui, lf_widget_t* widget) {
@@ -140,16 +144,20 @@ void bar_desktop_click(lf_ui_state_t* ui, lf_widget_t* widget) {
 }
 
 void bar_desktop_design(lf_ui_state_t* ui, uint32_t desktop, uint32_t crntdesktop, const char* name) {
+  uint32_t dist = abs(desktop - crntdesktop);
     lf_button(ui);
     lf_widget_set_padding(ui, lf_crnt(ui), 0);
     lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
-    lf_style_widget_prop_color(ui, lf_crnt(ui), color,
-                               (desktop == crntdesktop ? 
-                               lf_color_dim(lf_color_from_hex(barcolor_secondary), 160.0f): 
-                               lf_color_dim(lf_color_from_hex(barcolor_secondary), 110.0f )
-                               ));
-    
-    lf_widget_set_fixed_width(ui, lf_crnt(ui), desktop == crntdesktop ? 55 : 20);
+    lf_style_widget_prop_color(
+        ui, lf_crnt(ui), color,
+        (desktop == crntdesktop ? 
+         lf_color_dim(lf_color_from_hex(barcolor_secondary), 200.0f): 
+         lf_color_dim(lf_color_from_hex(barcolor_secondary), MAX(160.0f - (dist * 10), 120.0f))
+        ));
+
+    lf_widget_set_fixed_width(
+        ui, lf_crnt(ui), 
+        desktop == crntdesktop ? 55 : 20);
     lf_widget_set_fixed_height(ui, lf_crnt(ui), 20);
     lf_style_widget_prop(ui, lf_crnt(ui), corner_radius, 20 / 2.0);
     ((lf_button_t*)lf_crnt(ui))->on_enter = bar_desktop_hover;

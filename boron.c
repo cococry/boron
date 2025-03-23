@@ -311,6 +311,21 @@ querydesktops(state_t* s) {
 }
 
 
+void
+cog_hover(lf_ui_state_t* ui, lf_widget_t* widget) {
+  lf_style_widget_prop_color(
+    ui, widget, color, 
+    lf_color_dim(lf_color_from_hex(barcolor_secondary), 120.0f)
+  );
+  lf_widget_set_prop(s.ui, widget, &widget->props.padding_left, 5);
+  lf_widget_set_prop(s.ui, widget, &widget->props.padding_right, 10);
+  lf_widget_set_prop(s.ui, widget, &widget->props.corner_radius, 8);
+}
+
+void 
+cog_leave(lf_ui_state_t* ui, lf_widget_t* widget) {
+  lf_component_rerender(ui, uidesktops);
+}
 
 void uidesktops(void) {
   s.div_desktops = lf_div(s.ui);
@@ -322,6 +337,18 @@ void uidesktops(void) {
   for(uint32_t i = 0; i < s.numdesktops; i++) {
     bar_desktop_design(s.ui, i, s.crntdesktop, s.desktopnames[i]);
   }
+
+  lf_button(s.ui);
+  ((lf_button_t*)lf_crnt(s.ui))->on_enter = cog_hover;
+  ((lf_button_t*)lf_crnt(s.ui))->on_leave = cog_leave;
+  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+  lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_NO_COLOR);
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, LF_WHITE);
+  lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_left, 10);
+  lf_text_h4(s.ui, "");
+  lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 15);
+  lf_button_end(s.ui);
   lf_div_end(s.ui);
 }
 
@@ -331,17 +358,28 @@ void uicmds(void) {
   lf_widget_set_sizing(lf_crnt(s.ui), SizingFitToContent);
   lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
 
-  bar_style_widget(s.ui, lf_crnt(s.ui));
 
-  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, LF_BLACK); 
  
   uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
   for(uint32_t i = 0; i < ncmds; i++) {
+    lf_div(s.ui);
+    lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
+    lf_widget_set_sizing(lf_crnt(s.ui), SizingFitToContent);
+    lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
+    lf_widget_set_fixed_height(s.ui, lf_crnt(s.ui), 30);
+    lf_crnt(s.ui)->scrollable = false;
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_left, 10);
+    if(i != ncmds - 1)
+      lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_right, 10);
+    bar_style_widget(s.ui, lf_crnt(s.ui));
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius, 
+                         (30 + lf_crnt(s.ui)->props.padding_top + 
+                         lf_crnt(s.ui)->props.padding_bottom) / 2);
     lf_text_sized(s.ui, getcmdoutput(barcmds[i].cmd), 25);
-    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, LF_WHITE);
+    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(0xdddddd));
+    lf_div_end(s.ui);
   }
 
-  lf_div_end(s.ui);
 
   lf_div_end(s.ui);
 }
@@ -548,6 +586,8 @@ area_t getfocusmon(state_t* s) {
 
 void finish_cmd_timer(lf_ui_state_t* ui, lf_timer_t* timer) {
   lf_component_rerender(ui, uicmds);
+  lf_widget_invalidate_size_and_layout(s.ui->root);
+  lf_widget_shape(s.ui, s.ui->root);
   lf_widget_invalidate_size_and_layout(s.ui->root);
   lf_widget_shape(s.ui, s.ui->root);
 }
