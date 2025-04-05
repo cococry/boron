@@ -26,7 +26,7 @@ fi
 case "$condition" in
     "Clear"|"Sunny")
         if $DAYTIME; then icon=""  # Sunny
-        else icon=""  # Clear Night
+        else icon=""  # Clear Night
         fi
         ;;
     "Partly cloudy")

@@ -378,7 +378,7 @@ void uicmds(void) {
     bar_style_widget(s.ui, lf_crnt(s.ui));
     lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius_percent, 50); 
     lf_text_sized(s.ui, s.cmdoutputs[i], 20);
-    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(0xdddddd));
+    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(bartextcolor));
     lf_div_end(s.ui);
   }
 

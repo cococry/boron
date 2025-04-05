@@ -1,0 +1,14 @@
+#!/bin/bash
+
+declare -A CLOCK_ICONS
+CLOCK_ICONS=(
+    ["01"]="󱐿" ["02"]="󱑀" ["03"]="󱑁" ["04"]="󱑂" ["05"]="󱑃" ["06"]="󱑄"
+    ["07"]="󱑅" ["08"]="󱑆" ["09"]="󱑇" ["10"]="󱑈" ["11"]="󱑉" ["12"]="󱑊"
+)
+
+HOUR_24=$(date +"%H")
+HOUR_12=$(date +"%I")
+MINUTE=$(date +"%M")
+
+ICON=${CLOCK_ICONS[$HOUR_12]}
+echo "$ICON $HOUR_24:$MINUTE"

@@ -68,30 +68,31 @@ static barcmd_t barcmds[] = {
     .update_interval_secs = 300.0f
   },
   {
-    .cmd ="date +\"󰥔 %H:%M\"",
+    .cmd ="boron-time",
     .update_interval_secs = 1.0f
   },
 };
 
 static state_t s;
 
-static const char*      barfont             = "JetBrainsMono Nerd Font";
+static const char*      barfont             = "RobotoMono Nerd Font";
 static const int32_t    barmon              = -1;
 static const barmode_t  barmode             = BarTop; 
 static const uint32_t   barmargin           = 10;
 static const uint32_t   barsize             = 50;
-static const uint32_t   barborderwidth      = 0;
+static const uint32_t   barborderwidth      = 3;
+static const uint32_t   barbordercolor      = 0x222222;
 static const uint32_t   barcolor_window     = 0x000000;
 static const uint32_t   bar_alpha           = 0; 
-static const uint32_t   barcolor_primary    = 0x181616;
-static const uint32_t   barcolor_secondary  = 0x1F1D1D;
-static const uint32_t   bartextcolor        = 0x000000;
+static const uint32_t   barcolor_primary    = 0x101010;
+static const uint32_t   barcolor_secondary  = 0x626262;
+static const uint32_t   bartextcolor        = 0x8D8D8D;
 
 
 void bar_style_widget(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_style_widget_prop_color(ui, widget, color, lf_color_from_hex(barcolor_primary)); 
-  lf_style_widget_prop_color(ui, widget, border_color, lf_color_from_hex(barcolor_secondary)); 
-  lf_style_widget_prop(ui, widget, border_width, 3);
+  lf_style_widget_prop_color(ui, widget, border_color, lf_color_from_hex(barbordercolor)); 
+  lf_style_widget_prop(ui, widget, border_width, barborderwidth);
   lf_style_widget_prop(ui, widget, corner_radius_percent, 50);
   lf_widget_set_padding(ui, widget, 5);
   lf_style_widget_prop(ui, widget, padding_left, 20);
@@ -146,15 +147,15 @@ void bar_desktop_click(lf_ui_state_t* ui, lf_widget_t* widget) {
 }
 
 void bar_desktop_design(lf_ui_state_t* ui, uint32_t desktop, uint32_t crntdesktop, const char* name) {
-  uint32_t dist = abs(desktop - crntdesktop);
+  int32_t dist = abs(desktop - crntdesktop);
     lf_button(ui);
     lf_widget_set_padding(ui, lf_crnt(ui), 0);
     lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
     lf_style_widget_prop_color(
         ui, lf_crnt(ui), color,
         (desktop == crntdesktop ? 
-         lf_color_dim(lf_color_from_hex(barcolor_secondary), 200.0f): 
-         lf_color_dim(lf_color_from_hex(barcolor_secondary), MAX(160.0f - (dist * 10), 120.0f))
+         lf_color_dim(lf_color_from_hex(barcolor_secondary), 150.0f): 
+         lf_color_dim(lf_color_from_hex(barcolor_secondary), MAX(100.0f - (dist * 10), 50.0f))
         ));
 
     lf_widget_set_fixed_width(
