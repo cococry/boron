@@ -4,14 +4,19 @@
 #include <leif/ez_api.h>
 #include <leif/layout.h>
 #include <leif/ui_core.h>
+#include <leif/util.h>
+#include <leif/widget.h>
 #include <ragnar/api.h>
 #include <stdint.h>
 #include <stdbool.h>
-
 #include <ragnar/api.h>
+#include <podvig/podvig.h>
 
-extern void uidesktops(void);
-extern void uicmds(void);
+#include <alsa/asoundlib.h>
+
+extern void uidesktops(lf_ui_state_t* ui);
+extern void uicmds(lf_ui_state_t* ui);
+extern void uiutil(lf_ui_state_t* ui);
   
 typedef enum {
   BarLeft = 0,
@@ -57,43 +62,44 @@ typedef struct {
 
   Atom ewmh_atoms[ewmh_atom_count];
 
-  lf_div_t* div_desktops;
+  lf_div_t* div_desktops, *div_cmds, *div_util;
 
   char** cmdoutputs;
+
+  pv_state_t* pvstate;
+
+  snd_mixer_t* sndhandle;
+  snd_mixer_selem_id_t* sndsid;
+  int32_t sndpollcount;
+  struct pollfd* sndpfds;
+  snd_mixer_elem_t* sndelem; 
 } state_t;
 
 static barcmd_t barcmds[] = {
   {
-    .cmd ="boron-weather",
-    .update_interval_secs = 300.0f
-  },
-  {
-    .cmd ="boron-time",
+    .cmd = "date +\"%b %e %H:%M\"",
     .update_interval_secs = 1.0f
   },
 };
 
 static state_t s;
 
-static const char*      barfont             = "RobotoMono Nerd Font";
+static const char*      barfont             = "Arimo Nerd Font";
 static const int32_t    barmon              = -1;
 static const barmode_t  barmode             = BarTop; 
-static const uint32_t   barmargin           = 10;
+static const uint32_t   barmargin_vert      = 20;
+static const uint32_t   barmargin_horz      = 300;
 static const uint32_t   barsize             = 50;
-static const uint32_t   barborderwidth      = 3;
-static const uint32_t   barbordercolor      = 0x222222;
-static const uint32_t   barcolor_window     = 0x000000;
+static const uint32_t   barborderwidth      = 0;
+static const uint32_t   barbordercolor      = 0x0;
+static const uint32_t   barcolor_window     = 0x0;
 static const uint32_t   bar_alpha           = 0; 
-static const uint32_t   barcolor_primary    = 0x101010;
-static const uint32_t   barcolor_secondary  = 0x626262;
-static const uint32_t   bartextcolor        = 0x8D8D8D;
+static const uint32_t   barcolorforeground  = 0xffffff;
+static const uint32_t   barcolorbackground  = 0x111111;
 
 
 void bar_style_widget(lf_ui_state_t* ui, lf_widget_t* widget) {
-  lf_style_widget_prop_color(ui, widget, color, lf_color_from_hex(barcolor_primary)); 
-  lf_style_widget_prop_color(ui, widget, border_color, lf_color_from_hex(barbordercolor)); 
-  lf_style_widget_prop(ui, widget, border_width, barborderwidth);
-  lf_style_widget_prop(ui, widget, corner_radius_percent, 50);
+  lf_style_widget_prop_color(ui, widget, color, LF_NO_COLOR); 
   lf_widget_set_padding(ui, widget, 5);
   lf_style_widget_prop(ui, widget, padding_left, 20);
   lf_style_widget_prop(ui, widget, padding_right, 20);
@@ -103,38 +109,41 @@ void bar_layout(lf_ui_state_t* ui) {
 
   lf_div(ui);
   lf_widget_set_fixed_height_percent(ui, lf_crnt(ui), 100.0f);
-  lf_widget_set_alignment(lf_crnt(ui), AlignCenterVertical);
+  lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_VERTICAL);
   lf_widget_set_padding(ui, lf_crnt(ui), 0);
   lf_crnt(s.ui)->scrollable = false;
+  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
+  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 30); 
 
   lf_div(ui);
-  lf_widget_set_layout(lf_crnt(ui), LayoutHorizontal);
-  lf_widget_set_alignment(lf_crnt(ui), AlignCenterVertical);
+  lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_HORIZONTAL);
+  lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_VERTICAL);
+ 
+
   lf_component(ui, uidesktops);
-
-  lf_div(ui);
-  lf_widget_set_layout(lf_crnt(ui), LayoutHorizontal);
-  lf_widget_set_sizing(lf_crnt(ui), SizingGrow);
-  lf_div_end(ui);
+  // Left align
+  lf_widget_set_pos_x_absolute_percent(&s.div_desktops->base, 0);
 
   lf_component(ui, uicmds);
+  // Center align
+  lf_widget_set_pos_x_absolute_percent(&s.div_cmds->base, 50);
+
+  lf_component(ui, uiutil);
+  // Right align
+  lf_widget_set_pos_x_absolute_percent(&s.div_util->base, 100);
 
   lf_div_end(ui);
-}
-
-
-void set_prop(lf_widget_t* widget, float* prop, float val) {
-  lf_widget_add_animation(widget, prop, *prop, val, 0.2, lf_ease_out_quad);
 }
 
 void bar_desktop_hover(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_widget_set_prop(ui, widget, &widget->props.padding_left, 5);
   lf_widget_set_prop(ui, widget, &widget->props.padding_right,5);
-  lf_widget_set_fixed_width(ui, widget, 55);
+  lf_widget_set_prop(ui, widget, &widget->props.padding_top, 5);
+  lf_widget_set_prop(ui, widget, &widget->props.padding_bottom,5);
   lf_widget_set_visible(widget->childs[0], true);
   lf_style_widget_prop_color(
     ui, widget, color, 
-    lf_color_dim(lf_color_from_hex(barcolor_secondary), 150.0f)
+    lf_color_dim(lf_color_from_hex(barcolorforeground), 150.0f)
   );
 }
 
@@ -147,21 +156,21 @@ void bar_desktop_click(lf_ui_state_t* ui, lf_widget_t* widget) {
 }
 
 void bar_desktop_design(lf_ui_state_t* ui, uint32_t desktop, uint32_t crntdesktop, const char* name) {
-  int32_t dist = abs(desktop - crntdesktop);
+  int32_t dist = abs((int32_t)desktop - (int32_t)crntdesktop);
     lf_button(ui);
     lf_widget_set_padding(ui, lf_crnt(ui), 0);
     lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
     lf_style_widget_prop_color(
         ui, lf_crnt(ui), color,
         (desktop == crntdesktop ? 
-         lf_color_dim(lf_color_from_hex(barcolor_secondary), 150.0f): 
-         lf_color_dim(lf_color_from_hex(barcolor_secondary), MAX(100.0f - (dist * 10), 50.0f))
+         lf_color_dim(lf_color_from_hex(barcolorforeground), 100.0f): 
+         lf_color_dim(lf_color_from_hex(barcolorforeground), MAX(100.0f - (dist * 10), 50.0f))
         ));
 
     lf_widget_set_fixed_width(
         ui, lf_crnt(ui), 
-        desktop == crntdesktop ? 55 : 20);
-    lf_widget_set_fixed_height(ui, lf_crnt(ui), 20);
+        desktop == crntdesktop ? 55 : 12);
+    lf_widget_set_fixed_height(ui, lf_crnt(ui), desktop == crntdesktop ? 20 : 12);
     lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent,50.0);
     ((lf_button_t*)lf_crnt(ui))->on_enter = bar_desktop_hover;
     ((lf_button_t*)lf_crnt(ui))->on_leave = bar_desktop_leave;

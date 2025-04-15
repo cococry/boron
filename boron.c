@@ -1,21 +1,35 @@
 #include <leif/color.h>
 #include <leif/layout.h>
 #include <leif/ui_core.h>
+#include <leif/util.h>
 #include <leif/widget.h>
 #include <leif/win.h>
+#include <podvig/podvig.h>
 #include <runara/runara.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/wait.h>
+#include <pthread.h>
 
 #include <leif/ez_api.h>
 
+pv_widget_t* sound;
+static pv_state_t* pvs;
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/Xinerama.h>
+
+typedef struct {
+  float volume, volume_before;
+  float microphone, microphone_before;
+} pv_sound_data_t;
+
+static pv_sound_data_t sound_data = {0};
+
+static void soundwidget(lf_ui_state_t* ui);
 
 #define INTERSECT(x,y,w,h,r)  (MAX(0, MIN((x)+(w),(r).x_org+(r).width)  - MAX((x),(r).x_org))) 
 #define ATTR_RERTIES 100
@@ -39,7 +53,7 @@ static int32_t getcurrentdesktop(Display* dsp);
 static char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops);
 
 static void vseperator(void);
-static void evcallback(void* ev);
+static void evcallback(void* ev, lf_ui_state_t* ui);
 static area_t getfocusmon(state_t* s);
 
 void
@@ -97,36 +111,36 @@ getbararea(area_t barmon) {
   switch(barmode) {
     case BarLeft: {
       bararea = (area_t){
-        barmon.x + barmargin,
-        barmon.y + barmargin,
+        barmon.x + barmargin_horz,
+        barmon.y + barmargin_vert,
         barsize, 
-        barmon.height - (barmargin * 2)
+        barmon.height - (barmargin_vert * 2)
       };
       break;
     }
     case BarRight: {
       bararea = (area_t){
-        barmon.x + barmon.width - barsize - barmargin,
-        barmon.y + barmargin,
+        barmon.x + barmon.width - barsize - barmargin_horz,
+        barmon.y + barmargin_vert,
         barsize, 
-        barmon.height - (barmargin * 2)
+        barmon.height - (barmargin_horz * 2)
       };
       break;
     }
     case BarTop: {
       bararea = (area_t){
-        barmon.x + barmargin,
-        barmon.y + barmargin,
-        barmon.width - (barmargin * 2),
+        barmon.x + barmargin_horz,
+        barmon.y + barmargin_vert,
+        barmon.width - (barmargin_horz * 2),
         barsize
       };
       break;
     }
     case BarBottom: {
       bararea = (area_t){
-        barmon.x + barmargin,
-        barmon.y + barmon.height - barsize -barmargin,
-        barmon.width - (barmargin * 2),
+        barmon.x + barmargin_horz,
+        barmon.y + barmon.height - barsize -barmargin_vert,
+        barmon.width - (barmargin_horz * 2),
         barsize
       };
       break;
@@ -175,22 +189,22 @@ void setewmhstrut(Window win, area_t area, Display* dpy) {
   switch (barmode) {
     case BarLeft: {
       // Space reserved on the left
-      strut[0] = area.width + barmargin * 2;
+      strut[0] = area.width + barmargin_horz * 2;
       break;
     }
     case BarRight: {
       // Space reserved on the right
-      strut[1] = area.width + barmargin * 2;
+      strut[1] = area.width + barmargin_horz * 2;
       break;
     }
     case BarTop: {
       // Space reserved on the top
-      strut[2] = area.height + barmargin * 2;
+      strut[2] = area.height + barmargin_vert * 2;
       break;
     }
     case BarBottom: {
       // Space reserved on the bottom
-      strut[3] = area.height + barmargin * 2;
+      strut[3] = area.height + barmargin_vert * 2;
       break;
     }
   }
@@ -198,19 +212,19 @@ void setewmhstrut(Window win, area_t area, Display* dpy) {
   // Left start Y
   strut[4] = area.y;
   // Left end Y
-  strut[5] = area.y + area.height - barmargin;
+  strut[5] = area.y + area.height - barmargin_vert;
   // Right start Y
   strut[6] = area.y;
   // Right end Y
-  strut[7] = area.y + area.height - barmargin;
+  strut[7] = area.y + area.height - barmargin_vert;
   // Top start X
   strut[8] = area.x;
   // Top end X
-  strut[9] = area.x + area.width - barmargin;
+  strut[9] = area.x + area.width - barmargin_horz;
   // Top start X
   strut[10] = area.x;
   // Top end X
-  strut[11] = area.x + area.width - barmargin;
+  strut[11] = area.x + area.width - barmargin_horz;
 
   XChangeProperty(s.dpy, win, strutpartial_atom, XA_CARDINAL, 32, PropModeReplace, (unsigned char*)strut, 12);
   XFlush(s.dpy); 
@@ -224,10 +238,10 @@ createuiwin(state_t* s) {
   lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_X, s->bararea.x);
   lf_ui_core_set_window_hint(LF_WINDOWING_HINT_POS_Y, s->bararea.y); 
   lf_ui_core_set_window_hint(LF_WINDOWING_HINT_TRANSPARENT_FRAMEBUFFER, true); 
-  lf_ui_core_set_window_flags(LF_WINDOWING_X11_OVERRIDE_REDIRECT);
+  lf_ui_core_set_window_flags(LF_WINDOWING_FLAG_X11_OVERRIDE_REDIRECT);
   lf_window_t win = lf_ui_core_create_window(s->bararea.width, s->bararea.height, "Boron Bar");
-  XSelectInput(lf_win_get_display(), DefaultRootWindow(lf_win_get_display()), PropertyChangeMask);
-  lf_windowing_set_event_cb(evcallback);
+  XSelectInput(lf_win_get_x11_display(), DefaultRootWindow(lf_win_get_x11_display()), PropertyChangeMask);
+  lf_win_set_event_cb(win, evcallback);
 
   return win;
 }
@@ -298,8 +312,8 @@ void
 querydesktops(state_t* s) {
   uint32_t numdesktopsbefore = s->numdesktops;
   uint32_t crntdesktopbefore = s->crntdesktop;
-  s->desktopnames = getdesktopnames(lf_win_get_display(), &s->numdesktops);
-  s->crntdesktop = getcurrentdesktop(lf_win_get_display());
+  s->desktopnames = getdesktopnames(lf_win_get_x11_display(), &s->numdesktops);
+  s->crntdesktop = getcurrentdesktop(lf_win_get_x11_display());
   if((s->numdesktops != numdesktopsbefore || 
     s->crntdesktop != crntdesktopbefore)) { 
     if(s->div_desktops) {
@@ -313,7 +327,7 @@ void
 cog_hover(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_style_widget_prop_color(
     ui, widget, color, 
-    lf_color_dim(lf_color_from_hex(barcolor_secondary), 120.0f)
+    lf_color_dim(lf_color_from_hex(barcolorforeground), 120.0f)
   );
   lf_widget_set_prop(s.ui, widget, &widget->props.padding_left, 5);
   lf_widget_set_prop(s.ui, widget, &widget->props.padding_right, 10);
@@ -324,62 +338,115 @@ cog_leave(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_component_rerender(ui, uidesktops);
 }
 
-void uidesktops(void) {
+void uidesktops(lf_ui_state_t* ui) {
   s.div_desktops = lf_div(s.ui);
-  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
-  lf_widget_set_sizing(lf_crnt(s.ui), SizingFitToContent);
-  lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
+  lf_widget_set_pos_x_absolute_percent(lf_crnt(s.ui), 0);
+  lf_widget_set_layout(lf_crnt(s.ui), LF_LAYOUT_HORIZONTAL);
+  lf_widget_set_sizing(lf_crnt(s.ui), LF_SIZING_FIT_CONTENT);
+  lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
   bar_style_widget(s.ui, lf_crnt(s.ui));
 
   lf_div(s.ui);
-  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
-  lf_widget_set_sizing(lf_crnt(s.ui), SizingFitToContent);
+  lf_widget_set_layout(lf_crnt(s.ui), LF_LAYOUT_HORIZONTAL);
+  lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
+  lf_widget_set_sizing(lf_crnt(s.ui), LF_SIZING_FIT_CONTENT);
   lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+
+  lf_text_h2(s.ui, "󰣇");
+  lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_right, 20);
   for(uint32_t i = 0; i < s.numdesktops; i++) {
     bar_desktop_design(s.ui, i, s.crntdesktop, s.desktopnames[i]);
   }
   lf_div_end(s.ui);
 
-  lf_button(s.ui);
-  ((lf_button_t*)lf_crnt(s.ui))->on_enter = cog_hover;
-  ((lf_button_t*)lf_crnt(s.ui))->on_leave = cog_leave;
-  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
-  lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
-  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_NO_COLOR);
-  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, LF_WHITE);
-  lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_left, 10);
-  lf_widget_set_prop(s.ui, lf_crnt(s.ui), &lf_crnt(s.ui)->props.corner_radius_percent, 50.0f);
-
-  lf_text_h4(s.ui, "");
-  lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 15);
-  lf_button_end(s.ui);
   lf_div_end(s.ui);
 }
 
-void uicmds(void) {
-  lf_div(s.ui);
-  lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
-  lf_widget_set_sizing(lf_crnt(s.ui), SizingFitToContent);
-  lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
+void uicmds(lf_ui_state_t* ui) {
+  s.div_cmds = lf_div(s.ui);
+  lf_widget_set_layout(lf_crnt(s.ui), LF_LAYOUT_HORIZONTAL);
+  lf_widget_set_sizing(lf_crnt(s.ui), LF_SIZING_FIT_CONTENT);
+  lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
+  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+  lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
 
- 
+
   uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
   for(uint32_t i = 0; i < ncmds; i++) {
     lf_div(s.ui);
-    lf_widget_set_layout(lf_crnt(s.ui), LayoutHorizontal);
-    lf_widget_set_sizing(lf_crnt(s.ui), SizingFitToContent);
-    lf_widget_set_alignment(lf_crnt(s.ui), AlignCenterVertical);
-    lf_widget_set_fixed_height(s.ui, lf_crnt(s.ui), 30);
+    lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+    lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
+    lf_widget_set_layout(lf_crnt(s.ui), LF_LAYOUT_HORIZONTAL);
+    lf_widget_set_sizing(lf_crnt(s.ui), LF_SIZING_FIT_CONTENT);
     lf_crnt(s.ui)->scrollable = false;
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_left, 10);
-    if(i != ncmds - 1)
-      lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_right, 10);
-    bar_style_widget(s.ui, lf_crnt(s.ui));
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius_percent, 50); 
     lf_text_sized(s.ui, s.cmdoutputs[i], 20);
-    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(bartextcolor));
+    lf_widget_set_font_style(s.ui, lf_crnt(s.ui), LF_FONT_STYLE_BOLD);
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_top, 10);
+    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(barcolorforeground));
+    lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_right, 15); 
     lf_div_end(s.ui);
+  }
+
+
+  lf_div_end(s.ui);
+}
+
+void hoverutilbtn(lf_ui_state_t* ui, lf_widget_t* widget) {
+  lf_style_widget_prop_color(ui, widget, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 30.0));
+}
+void leaveutilbtn(lf_ui_state_t* ui, lf_widget_t* widget) {
+  lf_component_rerender(ui, uiutil);
+}
+
+lf_button_t* utilbtn(const char* text, bool set_color) {
+  lf_button_t* btn = lf_button(s.ui);
+  lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius_percent, 30);
+  lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
+  ((lf_button_t*)lf_crnt(s.ui))->on_enter = hoverutilbtn;
+  ((lf_button_t*)lf_crnt(s.ui))->on_leave = leaveutilbtn;
+  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+  lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 30);
+  if(set_color)
+    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_NO_COLOR);
+  lf_text_h4(s.ui, text);
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(barcolorforeground));
+  lf_button_end(s.ui);
+  return btn;
+}
+
+void soundbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
+  if(sound->data.hidden) {
+    pv_widget_show(sound);
+  } else {
+    pv_widget_hide(sound); 
+  }
+}
+
+void uiutil(lf_ui_state_t* ui) {
+  s.div_util = lf_div(s.ui);
+  lf_widget_set_pos_x_absolute_percent(lf_crnt(s.ui), 100);
+  lf_widget_set_sizing(lf_crnt(s.ui), LF_SIZING_FIT_CONTENT);
+  lf_widget_set_layout(lf_crnt(s.ui), LF_LAYOUT_HORIZONTAL);
+  lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
+
+  {
+    lf_button_t* btn = utilbtn("", true);
+    btn->on_click = soundbtnpress;
+  }
+
+  {
+    lf_button_t* btn = utilbtn("", true);
+    btn->on_click = soundbtnpress;
+  }
+  {
+    char* icon =  "";
+       lf_button_t* btn = utilbtn(icon, true);
+    btn->on_click = soundbtnpress;
+  }
+  {
+    lf_button_t* btn = utilbtn("⏻", false);
+    lf_style_widget_prop_color(s.ui, &btn->base, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 20.0));
   }
 
 
@@ -393,18 +460,19 @@ void vseperator(void) {
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
   lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 2);
   lf_widget_set_fixed_height(s.ui, lf_crnt(s.ui), font_height);
-  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, lf_color_from_hex(0x333333) );
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, lf_color_from_hex(barcolorforeground) );
   lf_div_end(s.ui);
 }
 
-void evcallback(void* ev) {
+void evcallback(void* ev, lf_ui_state_t* ui) {
+  (void)ui;
   XEvent* xev = (XEvent*)ev;
   switch(xev->type) {
     case PropertyNotify: 
       {
         XPropertyEvent *property_notify = (XPropertyEvent*)xev;
 
-        if (property_notify->window == DefaultRootWindow(lf_win_get_display())) {
+        if (property_notify->window == DefaultRootWindow(lf_win_get_x11_display())) {
           bool is_interesting = false;
 
           for (uint32_t i = 0; i < ewmh_atom_count; i++) {
@@ -595,15 +663,231 @@ void finish_cmd_timer(lf_ui_state_t* ui, lf_timer_t* timer) {
   lf_widget_invalidate_size_and_layout(s.ui->root);
   lf_widget_shape(s.ui, s.ui->root);
 }
+bool micmuted = false;
+bool volmuted = false;
+
+void handlevolumelsider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
+  char buf[32];
+  sprintf(buf, "amixer sset Master %f%% &", *val); 
+  runcmd(buf);
+  lf_component_rerender(sound->ui, soundwidget);
+}
+
+void handlemicrophoneslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
+  char buf[32];
+  sprintf(buf, "amixer sset Capture %f%% &", *val); 
+  runcmd(buf);
+  lf_component_rerender(sound->ui, soundwidget);
+}
+
+lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val){
+  lf_slider_t* slider = lf_slider(ui, val, 0, 100);
+  lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
+  slider->handle_props.color = LF_WHITE;
+  slider->_initial_handle_props = slider->handle_props;
+  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 60));
+  lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
+  slider->base.container.size.y = 2;
+  slider->handle.size.x = 15;
+  slider->handle.size.y = 15;
+  slider->handle_props.corner_radius = 15.0f / 2;
+  lf_style_widget_prop(ui, lf_crnt(ui), margin_left, 20);
+  return slider;
+}
+
+
+void mutemic(lf_ui_state_t* ui, lf_widget_t* widget) {
+  char buf[32];
+  sprintf(buf, "amixer sset Capture toggle"); 
+  micmuted = !micmuted;
+  if(micmuted) {
+    sound_data.microphone_before = sound_data.microphone;
+    sound_data.microphone_before = 0;
+  } else {
+    sound_data.microphone = sound_data.microphone_before;
+  }
+  lf_component_rerender(sound->ui, soundwidget); 
+  runcmd(buf);
+}
+
+void mutevolume(lf_ui_state_t* ui, lf_widget_t* widget) {
+  char buf[32];
+  sprintf(buf, "amixer sset Master toggle"); 
+  volmuted = !volmuted;
+  if(volmuted) {
+    sound_data.volume_before = sound_data.volume;
+    sound_data.volume = 0;
+  } else {
+    sound_data.volume = sound_data.volume_before;
+  }
+  lf_component_rerender(sound->ui, soundwidget); 
+  runcmd(buf);
+}
+
+void soundwidget(lf_ui_state_t* ui) {
+  lf_div(ui)->base.scrollable = false;
+  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 10); 
+  lf_style_widget_prop_color(ui, lf_crnt(ui), border_color, lf_color_from_hex(0xcccccc)); 
+  lf_style_widget_prop(ui, lf_crnt(ui), border_width, 2); 
+  lf_widget_set_fixed_height_percent(ui, lf_crnt(ui), 100.0f);
+  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
+
+  lf_text_h4(ui, " System Volume");
+  lf_widget_set_font_style(ui, lf_crnt(ui), LF_FONT_STYLE_BOLD);
+  lf_div(ui);
+  lf_widget_set_margin(ui, lf_crnt(ui), 0);
+  lf_widget_set_padding(ui, lf_crnt(ui), 0);
+  lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_HORIZONTAL);
+  lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_HORIZONTAL | LF_ALIGN_CENTER_VERTICAL);
+  {
+    char* icon =  "";
+    if(sound_data.volume >= 50)    {  icon = ""; }
+    else if(sound_data.volume > 0) {  icon = ""; } 
+    else if(sound_data.volume <= 0){  icon = ""; }
+    lf_button(ui)->on_click = mutevolume;
+    lf_crnt(ui)->props = ui->theme->text_props;
+
+    lf_widget_set_fixed_width(ui, lf_crnt(ui), 35);
+    lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
+    lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 25.0f)); 
+    lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20.0f); 
+    lf_text_h4(ui, icon); 
+    lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
+    lf_button_end(ui);
+  }
+  volumeslider(ui, &sound_data.volume)->on_slide = handlevolumelsider;
+
+  lf_div_end(ui);
+
+  lf_text_h4(ui, " Microphone");
+  lf_widget_set_font_style(ui, lf_crnt(ui), LF_FONT_STYLE_BOLD);
+  lf_div(ui);
+  lf_widget_set_margin(ui, lf_crnt(ui), 0);
+  lf_widget_set_padding(ui, lf_crnt(ui), 0);
+  lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_HORIZONTAL);
+  lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_HORIZONTAL | LF_ALIGN_CENTER_VERTICAL);
+  {
+    char* icon =  "";
+    if(sound_data.microphone >= 50)    {  icon = ""; }
+    else if(sound_data.microphone > 0) {  icon = ""; } 
+    else if(sound_data.microphone <= 0){  icon = ""; }
+
+    lf_button(ui)->on_click = mutemic;
+    lf_style_widget_prop_color(ui, lf_crnt(ui), color, LF_NO_COLOR); 
+    lf_crnt(ui)->props = ui->theme->text_props;
+    lf_text_h4(ui, icon); 
+    lf_widget_set_fixed_width(ui, lf_crnt(ui), 25);
+    lf_widget_set_fixed_height(ui, lf_crnt(ui), 20);
+    lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
+    lf_button_end(ui);
+  }
+
+  lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
+  volumeslider(ui, &sound_data.microphone)->on_slide = handlemicrophoneslider;
+
+  lf_div_end(ui);
+
+
+  lf_div_end(ui);
+}
+
+bool alsasetup(state_t* s) {
+  const char* card = "default";
+  const char* selem_name = "Master";
+  if (snd_mixer_open(&s->sndhandle, 0) < 0) {
+    fprintf(stderr, "boron: alsa: error opening mixer\n");
+    return false;
+  }
+  if (snd_mixer_attach(s->sndhandle, card) < 0) {
+    fprintf(stderr, "boron: alsa: error attaching mixer\n");
+    snd_mixer_close(s->sndhandle);
+    return false;
+  }
+
+  if (snd_mixer_selem_register(s->sndhandle, NULL, NULL) < 0) {
+    fprintf(stderr, "boron: alsa: error registering mixer\n");
+    snd_mixer_close(s->sndhandle);
+    return false;
+  }
+
+  if (snd_mixer_load(s->sndhandle) < 0) {
+    fprintf(stderr, "boron: alsa: error loading mixer elements\n");
+    snd_mixer_close(s->sndhandle);
+    return false;
+  }
+
+  snd_mixer_selem_id_malloc(&s->sndsid);
+  snd_mixer_selem_id_set_index(s->sndsid, 0);
+  snd_mixer_selem_id_set_name(s->sndsid, selem_name);
+
+  s->sndelem = snd_mixer_find_selem(s->sndhandle, s->sndsid);
+  if (!s->sndelem) {
+    fprintf(stderr, "boron: unable to find simple control '%s'\n", selem_name);
+    snd_mixer_selem_id_free(s->sndsid);
+    snd_mixer_close(s->sndhandle);
+    return false;
+  }
+
+  s->sndpollcount = snd_mixer_poll_descriptors_count(s->sndhandle );
+  s->sndpfds = malloc(sizeof(*s->sndpfds) * s->sndpollcount);
+  snd_mixer_poll_descriptors(s->sndhandle, s->sndpfds, s->sndpollcount);
+
+  return true;
+}
+
+
+pthread_mutex_t sound_mutex = PTHREAD_MUTEX_INITIALIZER;
+void* alsalisten(void *arg) {
+  state_t* s = (state_t *)arg;
+
+  while (1) {
+    if (poll(s->sndpfds, s->sndpollcount, -1) > 0) {
+      snd_mixer_handle_events(s->sndhandle);
+
+      long min, max, volume;
+      int pswitch;
+      snd_mixer_selem_get_playback_volume_range(s->sndelem, &min, &max);
+      snd_mixer_selem_get_playback_volume(s->sndelem, SND_MIXER_SCHN_FRONT_LEFT, &volume);
+      snd_mixer_selem_get_playback_switch(s->sndelem, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
+      if (max - min > 0 && pswitch != 0) {
+        if(sound) {
+          lf_widget_t* active_widget = lf_widget_from_id(sound->ui, sound->ui->root, sound->ui->active_widget_id);
+          if(active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
+        }
+        int percent = (int)(((volume - min) * 100) / (max - min));
+        pthread_mutex_lock(&sound_mutex);
+        sound_data.volume = percent;
+        if(sound) {
+          lf_component_rerender(sound->ui, soundwidget);
+        }
+        pthread_mutex_unlock(&sound_mutex);
+      }    
+    }
+  }
+
+  return NULL;
+}
+
 
 int main(void) {
+  pvs = pv_init();
+  if(!pvs) return 1;
   initxstate(&s);
   if(lf_windowing_init() != 0) {
     fail("cannot initialize libleif windowing backend.");
   }
 
+  if(!alsasetup(&s)) return 1;
+  pthread_t listener_thread;
+  if (pthread_create(&listener_thread, NULL, alsalisten, (void *)&s) != 0) {
+    fprintf(stderr, "boron: alsa: error creating listener thread\n");
+    snd_mixer_close(s.sndhandle);
+    return 1;
+  }
+
+
   lf_window_t win = createuiwin(&s);
-  
+
   setbarclasshints(win, s.dpy);
   setewmhstrut(win, s.bararea, s.dpy);
   setwintypedock(win, s.dpy);
@@ -611,7 +895,7 @@ int main(void) {
   s.ui = lf_ui_core_init(win);
 
   lf_widget_set_font_family(s.ui, s.ui->root, barfont);
-  lf_widget_set_font_style(s.ui, s.ui->root, LF_FONT_STYLE_BOLD);
+  lf_widget_set_font_style(s.ui, s.ui->root, LF_FONT_STYLE_REGULAR);
 
   lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, 
                              ((lf_color_t){
@@ -621,7 +905,20 @@ int main(void) {
                              .a = bar_alpha 
                              }));
 
- 
+
+  pthread_mutex_lock(&sound_mutex);
+  sound = pv_widget(
+    pvs, "boron_sound_popup", soundwidget,
+    s.bararea.x + s.bararea.width - 300, 
+    s.bararea.y + s.bararea.height + 10,
+    300, 160);
+  pthread_mutex_unlock(&sound_mutex);
+  pv_widget_set_popup_of(pvs, sound, win);
+  lf_widget_set_font_family(sound->ui, sound->ui->root, barfont);
+  lf_widget_set_font_style(sound->ui, sound->ui->root, LF_FONT_STYLE_REGULAR);
+
+  pv_widget_hide(sound);
+  pv_widget_set_animation(sound, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
   uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
 
   s.cmdoutputs = malloc(sizeof(char*) * ncmds);
@@ -630,7 +927,7 @@ int main(void) {
     uint32_t* user_data = malloc(sizeof(uint32_t));
     *user_data = i;
     timer->user_data = user_data; 
-    
+
     s.cmdoutputs[i] = getcmdoutput(barcmds[i].cmd);
   }
 
@@ -644,8 +941,13 @@ int main(void) {
   lf_widget_shape(s.ui, s.ui->root);
 
   while(s.ui->running) {
+    pv_update(pvs);
     lf_ui_core_next_event(s.ui);
   }
+
+
+  snd_mixer_selem_id_free(s.sndsid);
+  snd_mixer_close(s.sndhandle);
 
   lf_ui_core_terminate(s.ui);
 
