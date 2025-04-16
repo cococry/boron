@@ -8,6 +8,7 @@
 #include <runara/runara.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/wait.h>
@@ -15,8 +16,6 @@
 
 #include <leif/ez_api.h>
 
-pv_widget_t* sound;
-static pv_state_t* pvs;
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -373,23 +372,7 @@ void uicmds(lf_ui_state_t* ui) {
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
   lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
 
-
-  uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
-  for(uint32_t i = 0; i < ncmds; i++) {
-    lf_div(s.ui);
-    lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
-    lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
-    lf_widget_set_layout(lf_crnt(s.ui), LF_LAYOUT_HORIZONTAL);
-    lf_widget_set_sizing(lf_crnt(s.ui), LF_SIZING_FIT_CONTENT);
-    lf_crnt(s.ui)->scrollable = false;
-    lf_text_sized(s.ui, s.cmdoutputs[i], 20);
-    lf_widget_set_font_style(s.ui, lf_crnt(s.ui), LF_FONT_STYLE_BOLD);
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_top, 10);
-    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(barcolorforeground));
-    lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_right, 15); 
-    lf_div_end(s.ui);
-  }
-
+  display_cmd(CMD_DATE);
 
   lf_div_end(s.ui);
 }
@@ -411,17 +394,17 @@ lf_button_t* utilbtn(const char* text, bool set_color) {
   lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 30);
   if(set_color)
     lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_NO_COLOR);
-  lf_text_h4(s.ui, text);
+  lf_text_t* txt = lf_text_h4(s.ui, text);
   lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(barcolorforeground));
   lf_button_end(s.ui);
   return btn;
 }
 
 void soundbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
-  if(sound->data.hidden) {
-    pv_widget_show(sound);
+  if(s.sound_widget->data.hidden) {
+    pv_widget_show(s.sound_widget);
   } else {
-    pv_widget_hide(sound); 
+    pv_widget_hide(s.sound_widget); 
   }
 }
 
@@ -438,12 +421,11 @@ void uiutil(lf_ui_state_t* ui) {
   }
 
   {
-    lf_button_t* btn = utilbtn("", true);
+    lf_button_t* btn = utilbtn(s.cmdoutputs[CMD_BATTERY], true);
     btn->on_click = soundbtnpress;
   }
   {
-    char* icon =  "";
-       lf_button_t* btn = utilbtn(icon, true);
+    lf_button_t* btn = utilbtn(s.cmdoutputs[CMD_VOLUME], true);
     btn->on_click = soundbtnpress;
   }
   {
@@ -674,7 +656,13 @@ void handlevolumelsider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
   char buf[32];
   sprintf(buf, "amixer sset Master %f%% &", *val); 
   runcmd(buf);
-  lf_component_rerender(sound->ui, soundwidget);
+  char* icon_before = strdup(s.cmdoutputs[CMD_VOLUME]);
+  s.cmdoutputs[CMD_VOLUME] = getcmdoutput(barcmds[CMD_VOLUME].cmd);
+  lf_component_rerender(s.sound_widget->ui, soundwidget);
+  if(strcmp(icon_before, s.cmdoutputs[CMD_VOLUME]) != 0) {
+    lf_component_rerender(s.ui, uiutil);
+  }
+  free(icon_before);
 }
 
 void handlemicrophoneslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
@@ -685,7 +673,7 @@ void handlemicrophoneslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) 
     runcmd("amixer sset Capture toggle &");
     sound_data.micmuted = false;
   }
-  lf_component_rerender(sound->ui, soundwidget);
+  lf_component_rerender(s.sound_widget->ui, soundwidget);
 }
 
 lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val){
@@ -714,7 +702,7 @@ void mutemic(lf_ui_state_t* ui, lf_widget_t* widget) {
   } else {
     sound_data.microphone = sound_data.microphone_before;
   }
-  lf_component_rerender(sound->ui, soundwidget); 
+  lf_component_rerender(s.sound_widget->ui, soundwidget); 
   runcmd(buf);
 }
 
@@ -728,7 +716,7 @@ void mutevolume(lf_ui_state_t* ui, lf_widget_t* widget) {
   } else {
     sound_data.volume = sound_data.volume_before;
   }
-  lf_component_rerender(sound->ui, soundwidget); 
+  lf_component_rerender(s.sound_widget->ui, soundwidget); 
   runcmd(buf);
 }
 
@@ -751,13 +739,13 @@ void soundwidget(lf_ui_state_t* ui) {
     char* icon =  "";
     if(sound_data.volume >= 50)    {  icon = ""; }
     else if(sound_data.volume > 0) {  icon = ""; } 
-    else if(sound_data.volume <= 0){  icon = ""; }
+    else {  icon = ""; }
     lf_button(ui)->on_click = mutevolume;
     lf_crnt(ui)->props = ui->theme->text_props;
 
     lf_widget_set_fixed_width(ui, lf_crnt(ui), 35);
     lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
-    lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 25.0f)); 
+    lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 15.0f)); 
     lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20.0f); 
     lf_text_h4(ui, icon); 
     lf_widget_set_fixed_width(ui, lf_crnt(ui), 18);
@@ -780,13 +768,13 @@ void soundwidget(lf_ui_state_t* ui) {
     char* icon =  "";
     if(sound_data.microphone >= 50)     {  icon = ""; }
     else if(sound_data.microphone > 0)  {  icon = ""; } 
-    else if(sound_data.microphone <= 0) {  icon = ""; }
+    else {  icon = ""; }
     lf_button(ui)->on_click = mutemic;
     lf_crnt(ui)->props = ui->theme->text_props;
 
     lf_widget_set_fixed_width(ui, lf_crnt(ui), 35);
     lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
-    lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 25.0f)); 
+    lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 15.0f)); 
     lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20.0f); 
     lf_text_h4(ui, icon); 
     lf_widget_set_fixed_width(ui, lf_crnt(ui), 18);
@@ -886,23 +874,41 @@ void* alsalisten(void *arg) {
         if (sound_data.volmuted) {
           sound_data.volume_before = sound_data.volume;
           sound_data.volume = 0;
+          printf("MUTED_)!@*)_!@_$*)_!@()$()_\n");
+          if(s->ui) {
+            s->cmdoutputs[CMD_VOLUME] = getcmdoutput(barcmds[CMD_VOLUME].cmd);
+            printf("new icon: %s\n",s->cmdoutputs[CMD_VOLUME]);
+            lf_component_rerender(s->ui, uiutil);
+          }
         }
         if (volmuted_before != sound_data.volmuted) {
           pthread_mutex_lock(&sound_mutex);
-          if (sound) {
-            lf_component_rerender(sound->ui, soundwidget);
+          if (s->sound_widget) {
+            lf_component_rerender(s->sound_widget->ui, soundwidget);
+
           }
           pthread_mutex_unlock(&sound_mutex);
-        } else if (max - min > 0 && pswitch != 0) {
-          if (sound) {
-            lf_widget_t* active_widget = lf_widget_from_id(sound->ui, sound->ui->root, sound->ui->active_widget_id);
+        } 
+        if (max - min > 0 && pswitch != 0) {
+          if (s->sound_widget) {
+            lf_widget_t* active_widget = lf_widget_from_id(
+              s->sound_widget->ui, 
+              s->sound_widget->ui->root, 
+              s->sound_widget->ui->active_widget_id);
             if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
           }
           int percent = (int)(((vol - min) * 100) / (max - min));
           pthread_mutex_lock(&sound_mutex);
           sound_data.volume = percent;
-          if (sound) {
-            lf_component_rerender(sound->ui, soundwidget);
+          if (s->sound_widget) {
+            lf_component_rerender(s->sound_widget->ui, soundwidget);
+
+            char* icon_before = strdup(s->cmdoutputs[CMD_VOLUME]);
+            s->cmdoutputs[CMD_VOLUME] = getcmdoutput(barcmds[CMD_VOLUME].cmd);
+            if(strcmp(icon_before, s->cmdoutputs[CMD_VOLUME]) != 0) {
+              lf_component_rerender(s->ui, uiutil);
+            }
+            free(icon_before);
           }
           pthread_mutex_unlock(&sound_mutex);
         }
@@ -923,28 +929,28 @@ void* alsalisten(void *arg) {
         }
         if (micmuted_before != sound_data.micmuted) {
           pthread_mutex_lock(&sound_mutex);
-          if (sound) {
-            lf_component_rerender(sound->ui, soundwidget);
+          if (s->sound_widget) {
+            lf_component_rerender(s->sound_widget->ui, soundwidget);
           }
+          s->cmdoutputs[CMD_VOLUME] = getcmdoutput(barcmds[CMD_VOLUME].cmd);
           pthread_mutex_unlock(&sound_mutex);
         } else if (max - min > 0 && pswitch != 0) {
-          if (sound) {
-            lf_widget_t* active_widget = lf_widget_from_id(sound->ui, sound->ui->root, sound->ui->active_widget_id);
+          if (s->sound_widget) {
+            lf_widget_t* active_widget = lf_widget_from_id(
+              s->sound_widget->ui, 
+              s->sound_widget->ui->root, 
+              s->sound_widget->ui->active_widget_id);
             if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
           }
           int percent = (int)(((vol - min) * 100) / (max - min));
           pthread_mutex_lock(&sound_mutex);
-          printf("Capture percent: %i\n", percent);
           sound_data.microphone = percent;
-          if (sound) {
-            lf_component_rerender(sound->ui, soundwidget);
+          if (s->sound_widget) {
+            lf_component_rerender(s->sound_widget->ui, soundwidget);
           }
           pthread_mutex_unlock(&sound_mutex);
         }
-
-
       }
-
     }
   }
 
@@ -953,8 +959,6 @@ void* alsalisten(void *arg) {
 
 
 int main(void) {
-  pvs = pv_init();
-  if(!pvs) return 1;
   initxstate(&s);
   if(lf_windowing_init() != 0) {
     fail("cannot initialize libleif windowing backend.");
@@ -990,26 +994,33 @@ int main(void) {
 
 
   pthread_mutex_lock(&sound_mutex);
-  sound = pv_widget(
-    pvs, "boron_sound_popup", soundwidget,
+
+  s.pvstate = pv_init();
+  if(!s.pvstate) return 1;
+  s.sound_widget = pv_widget(
+    s.pvstate, "boron_sound_popup", soundwidget,
     s.bararea.x + s.bararea.width - 300, 
     s.bararea.y + s.bararea.height + 10,
     300, 160);
-  pthread_mutex_unlock(&sound_mutex);
-  pv_widget_set_popup_of(pvs, sound, win);
-  lf_widget_set_font_family(sound->ui, sound->ui->root, barfont);
-  lf_widget_set_font_style(sound->ui, sound->ui->root, LF_FONT_STYLE_REGULAR);
 
-  pv_widget_hide(sound);
-  pv_widget_set_animation(sound, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
+  pthread_mutex_unlock(&sound_mutex);
+
+  pv_widget_set_popup_of(s.pvstate, s.sound_widget, win);
+  lf_widget_set_font_family(s.sound_widget->ui, s.sound_widget->ui->root, barfont);
+  lf_widget_set_font_style(s.sound_widget->ui, s.sound_widget->ui->root, LF_FONT_STYLE_REGULAR);
+
+  pv_widget_hide(s.sound_widget);
+  pv_widget_set_animation(s.sound_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
   uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
 
   s.cmdoutputs = malloc(sizeof(char*) * ncmds);
   for(uint32_t i = 0; i < ncmds; i++) {
-    lf_timer_t* timer = lf_ui_core_start_timer_looped(s.ui, barcmds[i].update_interval_secs, finish_cmd_timer);
-    uint32_t* user_data = malloc(sizeof(uint32_t));
-    *user_data = i;
-    timer->user_data = user_data; 
+    if(barcmds[i].update_interval_secs > 0.0f) {
+      lf_timer_t* timer = lf_ui_core_start_timer_looped(s.ui, barcmds[i].update_interval_secs, finish_cmd_timer);
+      uint32_t* user_data = malloc(sizeof(uint32_t));
+      *user_data = i;
+      timer->user_data = user_data; 
+    }
 
     s.cmdoutputs[i] = getcmdoutput(barcmds[i].cmd);
   }
@@ -1024,7 +1035,7 @@ int main(void) {
   lf_widget_shape(s.ui, s.ui->root);
 
   while(s.ui->running) {
-    pv_update(pvs);
+    pv_update(s.pvstate);
     lf_ui_core_next_event(s.ui);
   }
 

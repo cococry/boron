@@ -5,7 +5,7 @@ CFLAGS	= -DLF_X11 -DLF_RUNARA -ffast-math -O3 -pedantic  -g
 LIBS 		=-L../lib -lleif  ${DEPLIBS} 
 
 all:
-	${CC} -o bin/${BIN}  ${CFLAGS}  *.c ${LIBS}
+	${CC} -o bin/${BIN}  ${CFLAGS}  src/*.c ${LIBS}
 
 install:
 	cp ./bin/boron /usr/bin

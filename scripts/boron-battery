@@ -17,27 +17,17 @@ else
 fi
 
 # Determine the appropriate icon based on the battery percentage
-if [ "$battery" -eq 100 ]; then
-    icon="󰁹"
-elif [ "$battery" -ge 90 ]; then
-    icon="󰂂"
-elif [ "$battery" -ge 70 ]; then
-    icon="󰂁"
+if [ "$battery" -ge 80 ]; then
+    icon=""
 elif [ "$battery" -ge 60 ]; then
-    icon="󰂀"
+    icon=""
 elif [ "$battery" -ge 50 ]; then
-    icon="󰁿"
-elif [ "$battery" -ge 40 ]; then
-    icon="󰁾"
-elif [ "$battery" -ge 30 ]; then
-    icon="󰁽"
-elif [ "$battery" -ge 20 ]; then
-    icon="󰁼"
-elif [ "$battery" -ge 10 ]; then
-    icon="󰁻"
+    icon=""
+elif [ "$battery" -ge 5 ]; then
+    icon=""
 else
-    icon="󰁺"
+    icon=""
 fi
 
 # Display the icon with the battery percentage
-echo "$icon $battery%"
+echo "$icon"

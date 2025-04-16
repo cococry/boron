@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# Get amixer output
+amixer_output=$(amixer get Master)
+
+# Check if either channel is muted
+if echo "$amixer_output" | grep -q '\[off\]'; then
+    echo ""
+    exit 0
+fi
+
+# Extract the first percentage (assumes both channels are same)
+volume=$(echo "$amixer_output" | grep -o -m 1 '[0-9]\+%')
+volume=${volume%\%}  # Strip the %
+
+# Determine and echo the appropriate Nerd Font icon
+if [ "$volume" -eq 0 ]; then
+    echo ""
+elif [ "$volume" -le 50 ]; then
+    echo ""
+else
+    echo ""
+fi
+
