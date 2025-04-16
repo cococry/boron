@@ -25,9 +25,11 @@ static pv_state_t* pvs;
 typedef struct {
   float volume, volume_before;
   float microphone, microphone_before;
-} pv_sound_data_t;
+  bool micmuted;
+  bool volmuted;
+} sound_data_t;
 
-static pv_sound_data_t sound_data = {0};
+static sound_data_t sound_data = {0};
 
 static void soundwidget(lf_ui_state_t* ui);
 
@@ -663,10 +665,12 @@ void finish_cmd_timer(lf_ui_state_t* ui, lf_timer_t* timer) {
   lf_widget_invalidate_size_and_layout(s.ui->root);
   lf_widget_shape(s.ui, s.ui->root);
 }
-bool micmuted = false;
-bool volmuted = false;
 
 void handlevolumelsider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
+  if(sound_data.volmuted) {
+    runcmd("amixer sset Master toggle &");
+    sound_data.volmuted = false;
+  }
   char buf[32];
   sprintf(buf, "amixer sset Master %f%% &", *val); 
   runcmd(buf);
@@ -677,6 +681,10 @@ void handlemicrophoneslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) 
   char buf[32];
   sprintf(buf, "amixer sset Capture %f%% &", *val); 
   runcmd(buf);
+  if(sound_data.micmuted) {
+    runcmd("amixer sset Capture toggle &");
+    sound_data.micmuted = false;
+  }
   lf_component_rerender(sound->ui, soundwidget);
 }
 
@@ -699,10 +707,10 @@ lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val){
 void mutemic(lf_ui_state_t* ui, lf_widget_t* widget) {
   char buf[32];
   sprintf(buf, "amixer sset Capture toggle"); 
-  micmuted = !micmuted;
-  if(micmuted) {
+  sound_data.micmuted = !sound_data.micmuted;
+  if(sound_data.micmuted) {
     sound_data.microphone_before = sound_data.microphone;
-    sound_data.microphone_before = 0;
+    sound_data.microphone = 0;
   } else {
     sound_data.microphone = sound_data.microphone_before;
   }
@@ -713,8 +721,8 @@ void mutemic(lf_ui_state_t* ui, lf_widget_t* widget) {
 void mutevolume(lf_ui_state_t* ui, lf_widget_t* widget) {
   char buf[32];
   sprintf(buf, "amixer sset Master toggle"); 
-  volmuted = !volmuted;
-  if(volmuted) {
+  sound_data.volmuted = !sound_data.volmuted;
+  if(sound_data.volmuted) {
     sound_data.volume_before = sound_data.volume;
     sound_data.volume = 0;
   } else {
@@ -752,6 +760,8 @@ void soundwidget(lf_ui_state_t* ui) {
     lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 25.0f)); 
     lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20.0f); 
     lf_text_h4(ui, icon); 
+    lf_widget_set_fixed_width(ui, lf_crnt(ui), 18);
+    lf_widget_set_fixed_height(ui, lf_crnt(ui), 15);
     lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
     lf_button_end(ui);
   }
@@ -768,16 +778,19 @@ void soundwidget(lf_ui_state_t* ui) {
   lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_HORIZONTAL | LF_ALIGN_CENTER_VERTICAL);
   {
     char* icon =  "";
-    if(sound_data.microphone >= 50)    {  icon = ""; }
-    else if(sound_data.microphone > 0) {  icon = ""; } 
-    else if(sound_data.microphone <= 0){  icon = ""; }
-
+    if(sound_data.microphone >= 50)     {  icon = ""; }
+    else if(sound_data.microphone > 0)  {  icon = ""; } 
+    else if(sound_data.microphone <= 0) {  icon = ""; }
     lf_button(ui)->on_click = mutemic;
-    lf_style_widget_prop_color(ui, lf_crnt(ui), color, LF_NO_COLOR); 
     lf_crnt(ui)->props = ui->theme->text_props;
+
+    lf_widget_set_fixed_width(ui, lf_crnt(ui), 35);
+    lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
+    lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 25.0f)); 
+    lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20.0f); 
     lf_text_h4(ui, icon); 
-    lf_widget_set_fixed_width(ui, lf_crnt(ui), 25);
-    lf_widget_set_fixed_height(ui, lf_crnt(ui), 20);
+    lf_widget_set_fixed_width(ui, lf_crnt(ui), 18);
+    lf_widget_set_fixed_height(ui, lf_crnt(ui), 15);
     lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
     lf_button_end(ui);
   }
@@ -793,11 +806,14 @@ void soundwidget(lf_ui_state_t* ui) {
 
 bool alsasetup(state_t* s) {
   const char* card = "default";
-  const char* selem_name = "Master";
+  const char* selem_name_master = "Master";
+  const char* selem_name_capture = "Capture";
+
   if (snd_mixer_open(&s->sndhandle, 0) < 0) {
     fprintf(stderr, "boron: alsa: error opening mixer\n");
     return false;
   }
+
   if (snd_mixer_attach(s->sndhandle, card) < 0) {
     fprintf(stderr, "boron: alsa: error attaching mixer\n");
     snd_mixer_close(s->sndhandle);
@@ -816,25 +832,39 @@ bool alsasetup(state_t* s) {
     return false;
   }
 
-  snd_mixer_selem_id_malloc(&s->sndsid);
-  snd_mixer_selem_id_set_index(s->sndsid, 0);
-  snd_mixer_selem_id_set_name(s->sndsid, selem_name);
+  // Master setup
+  snd_mixer_selem_id_malloc(&s->sndsid_master);
+  snd_mixer_selem_id_set_index(s->sndsid_master, 0);
+  snd_mixer_selem_id_set_name(s->sndsid_master, selem_name_master);
 
-  s->sndelem = snd_mixer_find_selem(s->sndhandle, s->sndsid);
-  if (!s->sndelem) {
-    fprintf(stderr, "boron: unable to find simple control '%s'\n", selem_name);
-    snd_mixer_selem_id_free(s->sndsid);
+  s->sndelem_master = snd_mixer_find_selem(s->sndhandle, s->sndsid_master);
+  if (!s->sndelem_master) {
+    fprintf(stderr, "boron: unable to find simple control '%s'\n", selem_name_master);
+    snd_mixer_selem_id_free(s->sndsid_master);
     snd_mixer_close(s->sndhandle);
     return false;
   }
 
-  s->sndpollcount = snd_mixer_poll_descriptors_count(s->sndhandle );
+  // Capture setup
+  snd_mixer_selem_id_malloc(&s->sndsid_capture);
+  snd_mixer_selem_id_set_index(s->sndsid_capture, 0);
+  snd_mixer_selem_id_set_name(s->sndsid_capture, selem_name_capture);
+
+  s->sndelem_capture = snd_mixer_find_selem(s->sndhandle, s->sndsid_capture);
+  if (!s->sndelem_capture) {
+    fprintf(stderr, "boron: unable to find simple control '%s'\n", selem_name_capture);
+    snd_mixer_selem_id_free(s->sndsid_master);
+    snd_mixer_selem_id_free(s->sndsid_capture);
+    snd_mixer_close(s->sndhandle);
+    return false;
+  }
+
+  s->sndpollcount = snd_mixer_poll_descriptors_count(s->sndhandle);
   s->sndpfds = malloc(sizeof(*s->sndpfds) * s->sndpollcount);
   snd_mixer_poll_descriptors(s->sndhandle, s->sndpfds, s->sndpollcount);
 
   return true;
 }
-
 
 pthread_mutex_t sound_mutex = PTHREAD_MUTEX_INITIALIZER;
 void* alsalisten(void *arg) {
@@ -844,24 +874,77 @@ void* alsalisten(void *arg) {
     if (poll(s->sndpfds, s->sndpollcount, -1) > 0) {
       snd_mixer_handle_events(s->sndhandle);
 
-      long min, max, volume;
-      int pswitch;
-      snd_mixer_selem_get_playback_volume_range(s->sndelem, &min, &max);
-      snd_mixer_selem_get_playback_volume(s->sndelem, SND_MIXER_SCHN_FRONT_LEFT, &volume);
-      snd_mixer_selem_get_playback_switch(s->sndelem, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
-      if (max - min > 0 && pswitch != 0) {
-        if(sound) {
-          lf_widget_t* active_widget = lf_widget_from_id(sound->ui, sound->ui->root, sound->ui->active_widget_id);
-          if(active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
+      {
+        // --- MASTER VOLUME (Playback) ---
+        long min, max, vol;
+        int pswitch;
+        snd_mixer_selem_get_playback_volume_range(s->sndelem_master, &min, &max);
+        snd_mixer_selem_get_playback_volume(s->sndelem_master, SND_MIXER_SCHN_FRONT_LEFT, &vol);
+        snd_mixer_selem_get_playback_switch(s->sndelem_master, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
+        bool volmuted_before = sound_data.volmuted;
+        sound_data.volmuted = pswitch == 0;
+        if (sound_data.volmuted) {
+          sound_data.volume_before = sound_data.volume;
+          sound_data.volume = 0;
         }
-        int percent = (int)(((volume - min) * 100) / (max - min));
-        pthread_mutex_lock(&sound_mutex);
-        sound_data.volume = percent;
-        if(sound) {
-          lf_component_rerender(sound->ui, soundwidget);
+        if (volmuted_before != sound_data.volmuted) {
+          pthread_mutex_lock(&sound_mutex);
+          if (sound) {
+            lf_component_rerender(sound->ui, soundwidget);
+          }
+          pthread_mutex_unlock(&sound_mutex);
+        } else if (max - min > 0 && pswitch != 0) {
+          if (sound) {
+            lf_widget_t* active_widget = lf_widget_from_id(sound->ui, sound->ui->root, sound->ui->active_widget_id);
+            if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
+          }
+          int percent = (int)(((vol - min) * 100) / (max - min));
+          pthread_mutex_lock(&sound_mutex);
+          sound_data.volume = percent;
+          if (sound) {
+            lf_component_rerender(sound->ui, soundwidget);
+          }
+          pthread_mutex_unlock(&sound_mutex);
         }
-        pthread_mutex_unlock(&sound_mutex);
-      }    
+      }
+
+      {
+        // --- CAPTURE VOLUME (Mic) ---
+        long min, max, vol;
+        int pswitch;
+        snd_mixer_selem_get_capture_volume_range(s->sndelem_capture, &min, &max);
+        snd_mixer_selem_get_capture_volume(s->sndelem_capture, SND_MIXER_SCHN_FRONT_LEFT, &vol);
+        snd_mixer_selem_get_capture_switch(s->sndelem_capture, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
+        bool micmuted_before = sound_data.micmuted;
+        sound_data.micmuted = pswitch == 0;
+        if (sound_data.micmuted) {
+          sound_data.microphone_before = sound_data.microphone;
+          sound_data.microphone = 0;
+        }
+        if (micmuted_before != sound_data.micmuted) {
+          pthread_mutex_lock(&sound_mutex);
+          if (sound) {
+            lf_component_rerender(sound->ui, soundwidget);
+          }
+          pthread_mutex_unlock(&sound_mutex);
+        } else if (max - min > 0 && pswitch != 0) {
+          if (sound) {
+            lf_widget_t* active_widget = lf_widget_from_id(sound->ui, sound->ui->root, sound->ui->active_widget_id);
+            if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
+          }
+          int percent = (int)(((vol - min) * 100) / (max - min));
+          pthread_mutex_lock(&sound_mutex);
+          printf("Capture percent: %i\n", percent);
+          sound_data.microphone = percent;
+          if (sound) {
+            lf_component_rerender(sound->ui, soundwidget);
+          }
+          pthread_mutex_unlock(&sound_mutex);
+        }
+
+
+      }
+
     }
   }
 
@@ -946,7 +1029,8 @@ int main(void) {
   }
 
 
-  snd_mixer_selem_id_free(s.sndsid);
+  snd_mixer_selem_id_free(s.sndsid_master);
+  snd_mixer_selem_id_free(s.sndsid_capture);
   snd_mixer_close(s.sndhandle);
 
   lf_ui_core_terminate(s.ui);

@@ -67,12 +67,14 @@ typedef struct {
   char** cmdoutputs;
 
   pv_state_t* pvstate;
-
-  snd_mixer_t* sndhandle;
-  snd_mixer_selem_id_t* sndsid;
+  
+  snd_mixer_t *sndhandle;
+  snd_mixer_selem_id_t *sndsid_master;
+  snd_mixer_selem_id_t *sndsid_capture;
+  snd_mixer_elem_t *sndelem_master;
+  snd_mixer_elem_t *sndelem_capture;
+  struct pollfd *sndpfds;
   int32_t sndpollcount;
-  struct pollfd* sndpfds;
-  snd_mixer_elem_t* sndelem; 
 } state_t;
 
 static barcmd_t barcmds[] = {
