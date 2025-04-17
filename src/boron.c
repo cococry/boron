@@ -6,13 +6,6 @@
 #include <leif/win.h>
 #include <podvig/podvig.h>
 #include <runara/runara.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <sys/wait.h>
-#include <pthread.h>
 
 #include <leif/ez_api.h>
 
@@ -21,14 +14,6 @@
 #include <X11/Xatom.h>
 #include <X11/extensions/Xinerama.h>
 
-typedef struct {
-  float volume, volume_before;
-  float microphone, microphone_before;
-  bool micmuted;
-  bool volmuted;
-} sound_data_t;
-
-static sound_data_t sound_data = {0};
 
 static void soundwidget(lf_ui_state_t* ui);
 
@@ -36,9 +21,12 @@ static void soundwidget(lf_ui_state_t* ui);
 #define ATTR_RERTIES 100
 #define ATTR_RETRY_DELAY 50000 // 50ms 
 
+#include "util.h"
 #include "config.h"
+#include "snd.h"
 
-static void fail(const char *fmt, ...);
+state_t s;
+
 static void initxstate(state_t* s);
 static void printerror(const char* message);
 static Atom getatom(const char* atomstr, Display* dpy);
@@ -47,7 +35,6 @@ static void setbarclasshints(Window bar, Display* dpy);
 static void setwintypedock(Window win, Display* dpy);
 static void setewmhstrut(Window, area_t area, Display* dpy);
 static lf_window_t createuiwin(state_t* s);
-static char* getcmdoutput(const char* command);
 
 static void querydesktops(state_t* s);
 static int32_t getcurrentdesktop(Display* dsp);
@@ -56,27 +43,6 @@ static char** getdesktopnames(Display* dsp, uint32_t* o_numdesktops);
 static void vseperator(void);
 static void evcallback(void* ev, lf_ui_state_t* ui);
 static area_t getfocusmon(state_t* s);
-
-void
-fail(const char *fmt, ...)
-{
-  /* Taken from dmenu */
-  va_list ap;
-  int saved_errno;
-
-  saved_errno = errno;
-
-  va_start(ap, fmt);
-  vfprintf(stderr, "boron: ", ap);
-  vfprintf(stderr, fmt, ap);
-  va_end(ap);
-
-  if (fmt[0] && fmt[strlen(fmt)-1] == ':')
-    fprintf(stderr, "%s", strerror(saved_errno));
-  fputc('\n', stderr);
-
-  exit(EXIT_FAILURE);
-}
 
 void 
 initxstate(state_t* s) {
@@ -252,62 +218,6 @@ compstrs(const void* a, const void* b) {
   return strcmp(*(const char **)a, *(const char **)b);
 }
 
-void
-runcmd(const char* cmd) {
-  if (cmd == NULL) {
-    return;
-  }
-
-  pid_t pid = fork();
-  if (pid == 0) {
-    execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
-    fprintf(stderr, "boron: failed to execute command '%s'.\n", cmd);
-    _exit(EXIT_FAILURE);
-  } else if (pid > 0) {
-    int32_t status;
-    waitpid(pid, &status, 0);
-    return;
-  } else {
-    fprintf(stderr, "boron: failed to execute command '%s'.\n", cmd);
-    return;
-  }
-}
-
-char*
-getcmdoutput(const char* command) {
-  FILE* fp;
-  char* result = NULL;
-  size_t result_size = 0;
-  char buffer[1024];
-
-  fp = popen(command, "r");
-  if (fp == NULL) {
-    printerror("failed to execute popen command.\n");
-    return NULL;
-  }
-  while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-    size_t buffer_len = strlen(buffer);
-    char* new_result = realloc(result, result_size + buffer_len + 1);
-    if (new_result == NULL) {
-      printerror("failed to allocate memory to hold command output.\n");
-      free(result);
-      pclose(fp);
-      return NULL;
-    }
-    result = new_result;
-    memcpy(result + result_size, buffer, buffer_len);
-    result_size += buffer_len;
-    result[result_size] = '\0'; 
-  }
-
-  if (pclose(fp) == -1) {
-    printerror("failed to close command file pointer.\n");
-    free(result);
-    return NULL;
-  }
-
-  return result;
-}
 
 void 
 querydesktops(state_t* s) {
@@ -426,8 +336,8 @@ void uiutil(lf_ui_state_t* ui) {
   }
   {
     char* icon =  "";
-    if(sound_data.volume >= 50)    {  icon = ""; }
-    else if(sound_data.volume > 0) {  icon = ""; } 
+    if(s.sound_data.volume >= 50)    {  icon = ""; }
+    else if(s.sound_data.volume > 0) {  icon = ""; } 
     else {  icon = ""; }
     lf_button_t* btn = utilbtn(icon,  true);
     btn->on_click = soundbtnpress;
@@ -648,316 +558,18 @@ void finish_cmd_timer(lf_ui_state_t* ui, lf_timer_t* timer) {
   lf_component_rerender(ui, uicmds);
 }
 
-void handlevolumelsider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
-  if(sound_data.volmuted) {
-    runcmd("amixer sset Master toggle &");
-    sound_data.volmuted = false;
-  }
-  char buf[32];
-  sprintf(buf, "amixer sset Master %f%% &", *val); 
-  runcmd(buf);
-  lf_component_rerender(s.sound_widget->ui, soundwidget);
-  lf_component_rerender(s.ui, uiutil);
-}
-
-void handlemicrophoneslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
-  char buf[32];
-  sprintf(buf, "amixer sset Capture %f%% &", *val); 
-  runcmd(buf);
-  if(sound_data.micmuted) {
-    runcmd("amixer sset Capture toggle &");
-    sound_data.micmuted = false;
-  }
-  lf_component_rerender(s.sound_widget->ui, soundwidget);
-}
-
-lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val){
-  lf_slider_t* slider = lf_slider(ui, val, 0, 100);
-  lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
-  slider->handle_props.color = LF_WHITE;
-  slider->_initial_handle_props = slider->handle_props;
-  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 60));
-  lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
-  slider->base.container.size.y = 2;
-  slider->handle.size.x = 15;
-  slider->handle.size.y = 15;
-  slider->handle_props.corner_radius = 15.0f / 2;
-  lf_style_widget_prop(ui, lf_crnt(ui), margin_left, 20);
-  return slider;
-}
-
-
-void mutemic(lf_ui_state_t* ui, lf_widget_t* widget) {
-  char buf[32];
-  sprintf(buf, "amixer sset Capture toggle"); 
-  sound_data.micmuted = !sound_data.micmuted;
-  if(sound_data.micmuted) {
-    sound_data.microphone_before = sound_data.microphone;
-    sound_data.microphone = 0;
-  } else {
-    sound_data.microphone = sound_data.microphone_before;
-  }
-  lf_component_rerender(s.sound_widget->ui, soundwidget); 
-  runcmd(buf);
-}
-
-void mutevolume(lf_ui_state_t* ui, lf_widget_t* widget) {
-  char buf[32];
-  sprintf(buf, "amixer sset Master toggle"); 
-  sound_data.volmuted = !sound_data.volmuted;
-  if(sound_data.volmuted) {
-    sound_data.volume_before = sound_data.volume;
-    sound_data.volume = 0;
-  } else {
-    sound_data.volume = sound_data.volume_before;
-  }
-  lf_component_rerender(s.sound_widget->ui, soundwidget); 
-  runcmd(buf);
-}
-
-void soundwidget(lf_ui_state_t* ui) {
-  lf_div(ui)->base.scrollable = false;
-  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 10); 
-  lf_style_widget_prop_color(ui, lf_crnt(ui), border_color, lf_color_from_hex(0xcccccc)); 
-  lf_style_widget_prop(ui, lf_crnt(ui), border_width, 2); 
-  lf_widget_set_fixed_height_percent(ui, lf_crnt(ui), 100.0f);
-  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
-
-  lf_text_h4(ui, " System Volume");
-  lf_widget_set_font_style(ui, lf_crnt(ui), LF_FONT_STYLE_BOLD);
-  lf_div(ui);
-  lf_widget_set_margin(ui, lf_crnt(ui), 0);
-  lf_widget_set_padding(ui, lf_crnt(ui), 0);
-  lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_HORIZONTAL);
-  lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_HORIZONTAL | LF_ALIGN_CENTER_VERTICAL);
-  {
-    char* icon =  "";
-    if(sound_data.volume >= 50)    {  icon = ""; }
-    else if(sound_data.volume > 0) {  icon = ""; } 
-    else {  icon = ""; }
-    lf_button(ui)->on_click = mutevolume;
-    lf_crnt(ui)->props = ui->theme->text_props;
-
-    lf_widget_set_fixed_width(ui, lf_crnt(ui), 35);
-    lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
-    lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 15.0f)); 
-    lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20.0f); 
-    lf_text_h4(ui, icon); 
-    lf_widget_set_fixed_width(ui, lf_crnt(ui), 18);
-    lf_widget_set_fixed_height(ui, lf_crnt(ui), 15);
-    lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
-    lf_button_end(ui);
-  }
-  volumeslider(ui, &sound_data.volume)->on_slide = handlevolumelsider;
-
-  lf_div_end(ui);
-
-  lf_text_h4(ui, " Microphone");
-  lf_widget_set_font_style(ui, lf_crnt(ui), LF_FONT_STYLE_BOLD);
-  lf_div(ui);
-  lf_widget_set_margin(ui, lf_crnt(ui), 0);
-  lf_widget_set_padding(ui, lf_crnt(ui), 0);
-  lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_HORIZONTAL);
-  lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_HORIZONTAL | LF_ALIGN_CENTER_VERTICAL);
-  {
-    char* icon =  "";
-    if(sound_data.microphone >= 50)     {  icon = ""; }
-    else if(sound_data.microphone > 0)  {  icon = ""; } 
-    else {  icon = ""; }
-    lf_button(ui)->on_click = mutemic;
-    lf_crnt(ui)->props = ui->theme->text_props;
-
-    lf_widget_set_fixed_width(ui, lf_crnt(ui), 35);
-    lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
-    lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 15.0f)); 
-    lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20.0f); 
-    lf_text_h4(ui, icon); 
-    lf_widget_set_fixed_width(ui, lf_crnt(ui), 18);
-    lf_widget_set_fixed_height(ui, lf_crnt(ui), 15);
-    lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
-    lf_button_end(ui);
-  }
-
-  lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
-  volumeslider(ui, &sound_data.microphone)->on_slide = handlemicrophoneslider;
-
-  lf_div_end(ui);
-
-
-  lf_div_end(ui);
-}
-
-bool alsasetup(state_t* s) {
-  const char* card = "default";
-  const char* selem_name_master = "Master";
-  const char* selem_name_capture = "Capture";
-
-  if (snd_mixer_open(&s->sndhandle, 0) < 0) {
-    fprintf(stderr, "boron: alsa: error opening mixer\n");
-    return false;
-  }
-
-  if (snd_mixer_attach(s->sndhandle, card) < 0) {
-    fprintf(stderr, "boron: alsa: error attaching mixer\n");
-    snd_mixer_close(s->sndhandle);
-    return false;
-  }
-
-  if (snd_mixer_selem_register(s->sndhandle, NULL, NULL) < 0) {
-    fprintf(stderr, "boron: alsa: error registering mixer\n");
-    snd_mixer_close(s->sndhandle);
-    return false;
-  }
-
-  if (snd_mixer_load(s->sndhandle) < 0) {
-    fprintf(stderr, "boron: alsa: error loading mixer elements\n");
-    snd_mixer_close(s->sndhandle);
-    return false;
-  }
-
-  // Master setup
-  snd_mixer_selem_id_malloc(&s->sndsid_master);
-  snd_mixer_selem_id_set_index(s->sndsid_master, 0);
-  snd_mixer_selem_id_set_name(s->sndsid_master, selem_name_master);
-
-  s->sndelem_master = snd_mixer_find_selem(s->sndhandle, s->sndsid_master);
-  if (!s->sndelem_master) {
-    fprintf(stderr, "boron: unable to find simple control '%s'\n", selem_name_master);
-    snd_mixer_selem_id_free(s->sndsid_master);
-    snd_mixer_close(s->sndhandle);
-    return false;
-  }
-
-  // Capture setup
-  snd_mixer_selem_id_malloc(&s->sndsid_capture);
-  snd_mixer_selem_id_set_index(s->sndsid_capture, 0);
-  snd_mixer_selem_id_set_name(s->sndsid_capture, selem_name_capture);
-
-  s->sndelem_capture = snd_mixer_find_selem(s->sndhandle, s->sndsid_capture);
-  if (!s->sndelem_capture) {
-    fprintf(stderr, "boron: unable to find simple control '%s'\n", selem_name_capture);
-    snd_mixer_selem_id_free(s->sndsid_master);
-    snd_mixer_selem_id_free(s->sndsid_capture);
-    snd_mixer_close(s->sndhandle);
-    return false;
-  }
-
-  s->sndpollcount = snd_mixer_poll_descriptors_count(s->sndhandle);
-  s->sndpfds = malloc(sizeof(*s->sndpfds) * s->sndpollcount);
-  snd_mixer_poll_descriptors(s->sndhandle, s->sndpfds, s->sndpollcount);
-
-  return true;
-}
-
-pthread_mutex_t sound_mutex = PTHREAD_MUTEX_INITIALIZER;
-void* alsalisten(void *arg) {
-  state_t* s = (state_t *)arg;
-
-  while (1) {
-    if (poll(s->sndpfds, s->sndpollcount, -1) > 0) {
-      snd_mixer_handle_events(s->sndhandle);
-
-      {
-        // --- MASTER VOLUME (Playback) ---
-        long min, max, vol;
-        int pswitch;
-        snd_mixer_selem_get_playback_volume_range(s->sndelem_master, &min, &max);
-        snd_mixer_selem_get_playback_volume(s->sndelem_master, SND_MIXER_SCHN_FRONT_LEFT, &vol);
-        snd_mixer_selem_get_playback_switch(s->sndelem_master, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
-        bool volmuted_before = sound_data.volmuted;
-        sound_data.volmuted = pswitch == 0;
-        if (sound_data.volmuted) {
-          sound_data.volume_before = sound_data.volume;
-          sound_data.volume = 0;
-          if(s->ui)
-            lf_component_rerender(s->ui, uiutil);
-        }
-        if (volmuted_before != sound_data.volmuted) {
-          pthread_mutex_lock(&sound_mutex);
-          if (s->sound_widget) {
-            lf_component_rerender(s->sound_widget->ui, soundwidget);
-
-          }
-          pthread_mutex_unlock(&sound_mutex);
-        } 
-        if (max - min > 0 && pswitch != 0) {
-          if (s->sound_widget) {
-            lf_widget_t* active_widget = lf_widget_from_id(
-              s->sound_widget->ui, 
-              s->sound_widget->ui->root, 
-              s->sound_widget->ui->active_widget_id);
-            if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
-          }
-          int percent = (int)(((vol - min) * 100) / (max - min));
-          pthread_mutex_lock(&sound_mutex);
-          sound_data.volume = percent;
-          if (s->sound_widget) {
-            lf_component_rerender(s->sound_widget->ui, soundwidget);
-          }
-          if(s->ui)
-            lf_component_rerender(s->ui, uiutil);
-          pthread_mutex_unlock(&sound_mutex);
-        }
-      }
-
-      {
-        // --- CAPTURE VOLUME (Mic) ---
-        long min, max, vol;
-        int pswitch;
-        snd_mixer_selem_get_capture_volume_range(s->sndelem_capture, &min, &max);
-        snd_mixer_selem_get_capture_volume(s->sndelem_capture, SND_MIXER_SCHN_FRONT_LEFT, &vol);
-        snd_mixer_selem_get_capture_switch(s->sndelem_capture, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
-        bool micmuted_before = sound_data.micmuted;
-        sound_data.micmuted = pswitch == 0;
-        if (sound_data.micmuted) {
-          sound_data.microphone_before = sound_data.microphone;
-          sound_data.microphone = 0;
-        }
-        if (micmuted_before != sound_data.micmuted) {
-          pthread_mutex_lock(&sound_mutex);
-          if (s->sound_widget) {
-            lf_component_rerender(s->sound_widget->ui, soundwidget);
-          }
-          pthread_mutex_unlock(&sound_mutex);
-        } else if (max - min > 0 && pswitch != 0) {
-          if (s->sound_widget) {
-            lf_widget_t* active_widget = lf_widget_from_id(
-              s->sound_widget->ui, 
-              s->sound_widget->ui->root, 
-              s->sound_widget->ui->active_widget_id);
-            if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
-          }
-          int percent = (int)(((vol - min) * 100) / (max - min));
-          pthread_mutex_lock(&sound_mutex);
-          sound_data.microphone = percent;
-          if (s->sound_widget) {
-            lf_component_rerender(s->sound_widget->ui, soundwidget);
-          }
-          pthread_mutex_unlock(&sound_mutex);
-        }
-      }
-    }
-  }
-
-  return NULL;
-}
-
 
 int main(void) {
+  memset(&s, 0, sizeof(s));
+  memset(&s.sound_data, 0, sizeof(s.sound_data));
   initxstate(&s);
   if(lf_windowing_init() != 0) {
     fail("cannot initialize libleif windowing backend.");
   }
 
-  if(!alsasetup(&s)) return 1;
-  pthread_t listener_thread;
-  if (pthread_create(&listener_thread, NULL, alsalisten, (void *)&s) != 0) {
-    fprintf(stderr, "boron: alsa: error creating listener thread\n");
-    snd_mixer_close(s.sndhandle);
-    return 1;
-  }
 
-
+  if(!sndsetup()) return 1;
+  
   lf_window_t win = createuiwin(&s);
 
   setbarclasshints(win, s.dpy);
@@ -978,25 +590,9 @@ int main(void) {
                              }));
 
 
-  pthread_mutex_lock(&sound_mutex);
+  if(!sndcreatewidget()) return 1;
 
-  s.pvstate = pv_init();
-  if(!s.pvstate) return 1;
-  s.sound_widget = pv_widget(
-    s.pvstate, "boron_sound_popup", soundwidget,
-    s.bararea.x + s.bararea.width - 300, 
-    s.bararea.y + s.bararea.height + 10,
-    300, 160);
-
-  pthread_mutex_unlock(&sound_mutex);
-
-  pv_widget_set_popup_of(s.pvstate, s.sound_widget, win);
-  lf_widget_set_font_family(s.sound_widget->ui, s.sound_widget->ui->root, barfont);
-  lf_widget_set_font_style(s.sound_widget->ui, s.sound_widget->ui->root, LF_FONT_STYLE_REGULAR);
-
-  pv_widget_hide(s.sound_widget);
-  pv_widget_set_animation(s.sound_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
-  uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
+   uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
 
   s.cmdoutputs = malloc(sizeof(char*) * ncmds);
   for(uint32_t i = 0; i < ncmds; i++) {
