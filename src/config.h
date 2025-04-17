@@ -80,24 +80,19 @@ typedef struct {
 } state_t;
 
 typedef enum {
-    CMD_DATE,
-    CMD_BATTERY,
-    CMD_VOLUME,
-    CMD_COUNT
+    CmdDate = 0,
+    CmdBattery,
+    CmdCount 
 } barcmd_id_t;
 
-static barcmd_t barcmds[CMD_COUNT] = {
-  [CMD_DATE] =  {
+static barcmd_t barcmds[CmdCount] = {
+  [CmdDate] =  {
     .cmd = "date +\"%b %e %H:%M\"",
     .update_interval_secs = 1.0f
   },
-  [CMD_BATTERY] =  {
+  [CmdBattery] =  {
     .cmd = "boron-battery",
     .update_interval_secs = 60.0f
-  },
-  [CMD_VOLUME] =  {
-    .cmd = "boron-volume",
-    .update_interval_secs = -1.0f
   },
 };
 

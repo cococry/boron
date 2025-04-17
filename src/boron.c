@@ -372,7 +372,7 @@ void uicmds(lf_ui_state_t* ui) {
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
   lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
 
-  display_cmd(CMD_DATE);
+  display_cmd(CmdDate);
 
   lf_div_end(s.ui);
 }
@@ -421,11 +421,15 @@ void uiutil(lf_ui_state_t* ui) {
   }
 
   {
-    lf_button_t* btn = utilbtn(s.cmdoutputs[CMD_BATTERY], true);
+    lf_button_t* btn = utilbtn(s.cmdoutputs[CmdBattery], true);
     btn->on_click = soundbtnpress;
   }
   {
-    lf_button_t* btn = utilbtn(s.cmdoutputs[CMD_VOLUME], true);
+    char* icon =  "";
+    if(sound_data.volume >= 50)    {  icon = ""; }
+    else if(sound_data.volume > 0) {  icon = ""; } 
+    else {  icon = ""; }
+    lf_button_t* btn = utilbtn(icon,  true);
     btn->on_click = soundbtnpress;
   }
   {
@@ -642,10 +646,6 @@ void finish_cmd_timer(lf_ui_state_t* ui, lf_timer_t* timer) {
   uint32_t cmdidx = *(uint32_t*)timer->user_data;
   s.cmdoutputs[cmdidx] = getcmdoutput(barcmds[cmdidx].cmd);
   lf_component_rerender(ui, uicmds);
-  lf_widget_invalidate_size_and_layout(s.ui->root);
-  lf_widget_shape(s.ui, s.ui->root);
-  lf_widget_invalidate_size_and_layout(s.ui->root);
-  lf_widget_shape(s.ui, s.ui->root);
 }
 
 void handlevolumelsider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
@@ -656,13 +656,8 @@ void handlevolumelsider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
   char buf[32];
   sprintf(buf, "amixer sset Master %f%% &", *val); 
   runcmd(buf);
-  char* icon_before = strdup(s.cmdoutputs[CMD_VOLUME]);
-  s.cmdoutputs[CMD_VOLUME] = getcmdoutput(barcmds[CMD_VOLUME].cmd);
   lf_component_rerender(s.sound_widget->ui, soundwidget);
-  if(strcmp(icon_before, s.cmdoutputs[CMD_VOLUME]) != 0) {
-    lf_component_rerender(s.ui, uiutil);
-  }
-  free(icon_before);
+  lf_component_rerender(s.ui, uiutil);
 }
 
 void handlemicrophoneslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
@@ -874,12 +869,8 @@ void* alsalisten(void *arg) {
         if (sound_data.volmuted) {
           sound_data.volume_before = sound_data.volume;
           sound_data.volume = 0;
-          printf("MUTED_)!@*)_!@_$*)_!@()$()_\n");
-          if(s->ui) {
-            s->cmdoutputs[CMD_VOLUME] = getcmdoutput(barcmds[CMD_VOLUME].cmd);
-            printf("new icon: %s\n",s->cmdoutputs[CMD_VOLUME]);
+          if(s->ui)
             lf_component_rerender(s->ui, uiutil);
-          }
         }
         if (volmuted_before != sound_data.volmuted) {
           pthread_mutex_lock(&sound_mutex);
@@ -902,14 +893,9 @@ void* alsalisten(void *arg) {
           sound_data.volume = percent;
           if (s->sound_widget) {
             lf_component_rerender(s->sound_widget->ui, soundwidget);
-
-            char* icon_before = strdup(s->cmdoutputs[CMD_VOLUME]);
-            s->cmdoutputs[CMD_VOLUME] = getcmdoutput(barcmds[CMD_VOLUME].cmd);
-            if(strcmp(icon_before, s->cmdoutputs[CMD_VOLUME]) != 0) {
-              lf_component_rerender(s->ui, uiutil);
-            }
-            free(icon_before);
           }
+          if(s->ui)
+            lf_component_rerender(s->ui, uiutil);
           pthread_mutex_unlock(&sound_mutex);
         }
       }
@@ -932,7 +918,6 @@ void* alsalisten(void *arg) {
           if (s->sound_widget) {
             lf_component_rerender(s->sound_widget->ui, soundwidget);
           }
-          s->cmdoutputs[CMD_VOLUME] = getcmdoutput(barcmds[CMD_VOLUME].cmd);
           pthread_mutex_unlock(&sound_mutex);
         } else if (max - min > 0 && pswitch != 0) {
           if (s->sound_widget) {
