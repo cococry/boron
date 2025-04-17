@@ -57,6 +57,13 @@ typedef struct {
 } sound_data_t;
 
 typedef struct {
+  char* name;
+  uint32_t percent;
+} battery_data_t;
+
+#define MAX_BATTERIES 16
+
+typedef struct {
   Display* dpy;
   Window root;
   lf_ui_state_t* ui;
@@ -84,9 +91,11 @@ typedef struct {
   struct pollfd *sndpfds;
   int32_t sndpollcount;
 
-  pv_widget_t* sound_widget;
+  pv_widget_t* sound_widget, *battery_widget;
 
   sound_data_t sound_data; 
+
+  battery_data_t batteries[MAX_BATTERIES];
 } state_t;
 
 typedef enum {

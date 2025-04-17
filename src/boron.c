@@ -1,3 +1,4 @@
+#include "battery.h"
 #include <leif/color.h>
 #include <leif/layout.h>
 #include <leif/ui_core.h>
@@ -310,12 +311,19 @@ lf_button_t* utilbtn(const char* text, bool set_color) {
   return btn;
 }
 
-void soundbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
-  if(s.sound_widget->data.hidden) {
-    pv_widget_show(s.sound_widget);
+void togglepopup(pv_widget_t* popup) {
+  if(popup->data.hidden) {
+    pv_widget_show(popup);
   } else {
-    pv_widget_hide(s.sound_widget); 
+    pv_widget_hide(popup); 
   }
+} 
+void soundbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
+  togglepopup(s.sound_widget);
+}
+
+void btrybtnpresss(lf_ui_state_t* ui, lf_widget_t* widget) {
+  togglepopup(s.battery_widget);
 }
 
 void uiutil(lf_ui_state_t* ui) {
@@ -332,7 +340,7 @@ void uiutil(lf_ui_state_t* ui) {
 
   {
     lf_button_t* btn = utilbtn(s.cmdoutputs[CmdBattery], true);
-    btn->on_click = soundbtnpress;
+    btn->on_click = btrybtnpresss;
   }
   {
     char* icon =  "";
@@ -590,7 +598,8 @@ int main(void) {
                              }));
 
 
-  if(!sndcreatewidget()) return 1;
+  if(!sndcreatewidget(win)) return 1;
+  if(!btrycreatewidget(win)) return 1;
 
    uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
 
