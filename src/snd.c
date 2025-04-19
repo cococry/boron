@@ -12,20 +12,26 @@ void handlevolumelsider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
     runcmd("amixer sset Master toggle &");
     s.sound_data.volmuted = false;
   }
-  char buf[32];
-  sprintf(buf, "amixer sset Master %f%% &", *val); 
-  runcmd(buf);
+  if (s.sndelem_master) {
+    long min, max;
+    snd_mixer_selem_get_playback_volume_range(s.sndelem_master, &min, &max);
+    long vol = min + (max - min) * (*val / 100.0f);
+    snd_mixer_selem_set_playback_volume_all(s.sndelem_master, vol);
+  }
   lf_component_rerender(s.sound_widget->ui, soundwidget);
   lf_component_rerender(s.ui, uiutil);
 }
 
 void handlemicrophoneslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
-  char buf[32];
-  sprintf(buf, "amixer sset Capture %f%% &", *val); 
-  runcmd(buf);
   if(s.sound_data.micmuted) {
     runcmd("amixer sset Capture toggle &");
     s.sound_data.micmuted = false;
+  }
+  if (s.sndelem_capture) {
+    long min, max;
+    snd_mixer_selem_get_playback_volume_range(s.sndelem_capture, &min, &max);
+    long vol = min + (max - min) * (*val / 100.0f);
+    snd_mixer_selem_set_playback_volume_all(s.sndelem_capture, vol);
   }
   lf_component_rerender(s.sound_widget->ui, soundwidget);
 }

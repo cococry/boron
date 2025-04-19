@@ -577,6 +577,7 @@ int main(void) {
 
 
   if(!sndsetup()) return 1;
+  if(!btrysetup()) return 1;
   
   lf_window_t win = createuiwin(&s);
 

@@ -18,6 +18,7 @@ extern void uidesktops(lf_ui_state_t* ui);
 extern void uicmds(lf_ui_state_t* ui);
 extern void uiutil(lf_ui_state_t* ui);
 
+#define MAX_NAME_LEN 256
   
 typedef enum {
   BarLeft = 0,
@@ -57,8 +58,8 @@ typedef struct {
 } sound_data_t;
 
 typedef struct {
-  char* name;
-  uint32_t percent;
+  char name[MAX_NAME_LEN];
+  int32_t last_percent;
 } battery_data_t;
 
 #define MAX_BATTERIES 16
@@ -96,6 +97,7 @@ typedef struct {
   sound_data_t sound_data; 
 
   battery_data_t batteries[MAX_BATTERIES];
+  uint32_t nbatteries;
 } state_t;
 
 typedef enum {
