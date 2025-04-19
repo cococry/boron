@@ -309,7 +309,9 @@ void* alsalisten(void *arg) {
         if (micmuted_before != s->sound_data.micmuted) {
           pthread_mutex_lock(&sound_mutex);
           if (s->sound_widget) {
-            lf_component_rerender(s->sound_widget->ui, soundwidget);
+            task_data_t* task_data = malloc(sizeof(task_data_t));
+            task_data->ui = s->sound_widget->ui;
+            lf_task_enqueue(rerender_snd_task, task_data);
           }
           pthread_mutex_unlock(&sound_mutex);
         } else if (max - min > 0 && pswitch != 0) {
@@ -324,7 +326,9 @@ void* alsalisten(void *arg) {
           pthread_mutex_lock(&sound_mutex);
           s->sound_data.microphone = percent;
           if (s->sound_widget) {
-            lf_component_rerender(s->sound_widget->ui, soundwidget);
+            task_data_t* task_data = malloc(sizeof(task_data_t));
+            task_data->ui = s->sound_widget->ui;
+            lf_task_enqueue(rerender_snd_task, task_data);
           }
           pthread_mutex_unlock(&sound_mutex);
         }
