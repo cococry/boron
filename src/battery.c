@@ -1,4 +1,5 @@
 #include "battery.h"
+#include <leif/color.h>
 #include <leif/layout.h>
 #include <leif/util.h>
 #include <leif/task.h>
@@ -140,7 +141,7 @@ btrylisten(void *arg) {
     }
 
 
-    if (s.battery_widget && changed) {
+      if (s.battery_widget && changed) {
       task_data_t* task_data = malloc(sizeof(task_data_t));
       task_data->ui = s.battery_widget->ui;
       lf_task_enqueue(rerender_battery_task, task_data);
@@ -191,8 +192,7 @@ btrywidget(lf_ui_state_t* ui) {
   lf_style_widget_prop_color(
     ui, lf_crnt(ui), border_color, lf_color_from_hex(0xcccccc)); 
   lf_style_widget_prop(ui, lf_crnt(ui), border_width, 2); 
-  lf_widget_set_fixed_height_percent(ui, lf_crnt(ui), 100.0f);
-  lf_widget_set_padding(ui, lf_crnt(ui), 20.0f);
+    lf_widget_set_padding(ui, lf_crnt(ui), 20.0f);
   lf_style_widget_prop_color(
     ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
   lf_text_h1(ui, "Battery");
@@ -235,6 +235,11 @@ btrywidget(lf_ui_state_t* ui) {
     lf_text_h3(ui, "%");
   lf_div_end(ui);
   }
+
+  if(!s.nbatteries) {
+    lf_text_h4(ui, "󱉝 No batteries deteced");
+      lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_dim(lf_color_from_hex(barcolorforeground), 80));
+    }
   lf_div_end(ui);
 
 }

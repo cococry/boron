@@ -1,11 +1,35 @@
 #include "config.h"
 #include "util.h"
 #include <leif/ez_api.h>
+#include <leif/layout.h>
+#include <leif/task.h>
 #include <pthread.h>
 
 static pthread_mutex_t sound_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void soundwidget(lf_ui_state_t* ui);
+
+static void rerender_util_task(void* data);
+
+static void rerender_snd_task(void* data);
+
+typedef struct {
+  lf_ui_state_t* ui;
+} task_data_t;
+
+void 
+rerender_util_task(void* data) {
+  lf_ui_state_t* ui = ((task_data_t*)data)->ui;
+  lf_component_rerender(ui, uiutil);
+  free(data);
+}
+
+void 
+rerender_snd_task(void* data) {
+  lf_ui_state_t* ui = ((task_data_t*)data)->ui;
+  lf_component_rerender(ui, soundwidget);
+  free(data);
+}
 
 void handlevolumelsider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
   if(s.sound_data.volmuted) {
@@ -229,14 +253,18 @@ void* alsalisten(void *arg) {
         if (s->sound_data.volmuted) {
           s->sound_data.volume_before = s->sound_data.volume;
           s->sound_data.volume = 0;
-          if(s->ui)
-            lf_component_rerender(s->ui, uiutil);
+          if(s->ui) {
+            task_data_t* task_data = malloc(sizeof(task_data_t));
+            task_data->ui = s->ui;
+            lf_task_enqueue(rerender_util_task, task_data);
+          }
         }
         if (volmuted_before != s->sound_data.volmuted) {
           pthread_mutex_lock(&sound_mutex);
           if (s->sound_widget) {
-            lf_component_rerender(s->sound_widget->ui, soundwidget);
-
+            task_data_t* task_data = malloc(sizeof(task_data_t));
+            task_data->ui = s->sound_widget->ui;
+            lf_task_enqueue(rerender_snd_task, task_data);
           }
           pthread_mutex_unlock(&sound_mutex);
         } 
@@ -252,10 +280,15 @@ void* alsalisten(void *arg) {
           pthread_mutex_lock(&sound_mutex);
           s->sound_data.volume = percent;
           if (s->sound_widget) {
-            lf_component_rerender(s->sound_widget->ui, soundwidget);
+            task_data_t* task_data = malloc(sizeof(task_data_t));
+            task_data->ui = s->sound_widget->ui;
+            lf_task_enqueue(rerender_snd_task, task_data);
           }
-          if(s->ui)
-            lf_component_rerender(s->ui, uiutil);
+          if(s->ui) {
+            task_data_t* task_data = malloc(sizeof(task_data_t));
+            task_data->ui = s->ui;
+            lf_task_enqueue(rerender_util_task, task_data);
+          }
           pthread_mutex_unlock(&sound_mutex);
         }
       }
