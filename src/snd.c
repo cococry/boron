@@ -234,105 +234,110 @@ bool alsasetup(state_t* s) {
   return true;
 }
 
+void 
+alsahandleui(state_t* s) {
+  {
+    // --- MASTER VOLUME (Playback) ---
+    long min, max, vol;
+    int pswitch;
+    snd_mixer_selem_get_playback_volume_range(s->sndelem_master, &min, &max);
+    snd_mixer_selem_get_playback_volume(s->sndelem_master, SND_MIXER_SCHN_FRONT_LEFT, &vol);
+    snd_mixer_selem_get_playback_switch(s->sndelem_master, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
+    bool volmuted_before = s->sound_data.volmuted;
+    s->sound_data.volmuted = pswitch == 0;
+    if (s->sound_data.volmuted) {
+      s->sound_data.volume_before = s->sound_data.volume;
+      s->sound_data.volume = 0;
+      if(s->ui) {
+        task_data_t* task_data = malloc(sizeof(task_data_t));
+        task_data->ui = s->ui;
+        lf_task_enqueue(rerender_util_task, task_data);
+      }
+    }
+    if (volmuted_before != s->sound_data.volmuted) {
+      pthread_mutex_lock(&sound_mutex);
+      if (s->sound_widget) {
+        task_data_t* task_data = malloc(sizeof(task_data_t));
+        task_data->ui = s->sound_widget->ui;
+        lf_task_enqueue(rerender_snd_task, task_data);
+      }
+      pthread_mutex_unlock(&sound_mutex);
+    } 
+    if (max - min > 0 && pswitch != 0) {
+      if (s->sound_widget) {
+        lf_widget_t* active_widget = lf_widget_from_id(
+          s->sound_widget->ui, 
+          s->sound_widget->ui->root, 
+          s->sound_widget->ui->active_widget_id);
+        if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) return;
+      }
+      int percent = (int)(((vol - min) * 100) / (max - min));
+      pthread_mutex_lock(&sound_mutex);
+      s->sound_data.volume = percent;
+      if (s->sound_widget) {
+        task_data_t* task_data = malloc(sizeof(task_data_t));
+        task_data->ui = s->sound_widget->ui;
+        lf_task_enqueue(rerender_snd_task, task_data);
+      }
+      if(s->ui) {
+        task_data_t* task_data = malloc(sizeof(task_data_t));
+        task_data->ui = s->ui;
+        lf_task_enqueue(rerender_util_task, task_data);
+      }
+      pthread_mutex_unlock(&sound_mutex);
+    }
+  }
+
+  {
+    // --- CAPTURE VOLUME (Mic) ---
+    long min, max, vol;
+    int pswitch;
+    snd_mixer_selem_get_capture_volume_range(s->sndelem_capture, &min, &max);
+    snd_mixer_selem_get_capture_volume(s->sndelem_capture, SND_MIXER_SCHN_FRONT_LEFT, &vol);
+    snd_mixer_selem_get_capture_switch(s->sndelem_capture, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
+    bool micmuted_before = s->sound_data.micmuted;
+    s->sound_data.micmuted = pswitch == 0;
+    if (s->sound_data.micmuted) {
+      s->sound_data.microphone_before = s->sound_data.microphone;
+      s->sound_data.microphone = 0;
+    }
+    if (micmuted_before != s->sound_data.micmuted) {
+      pthread_mutex_lock(&sound_mutex);
+      if (s->sound_widget) {
+        task_data_t* task_data = malloc(sizeof(task_data_t));
+        task_data->ui = s->sound_widget->ui;
+        lf_task_enqueue(rerender_snd_task, task_data);
+      }
+      pthread_mutex_unlock(&sound_mutex);
+    } else if (max - min > 0 && pswitch != 0) {
+      if (s->sound_widget) {
+        lf_widget_t* active_widget = lf_widget_from_id(
+          s->sound_widget->ui, 
+          s->sound_widget->ui->root, 
+          s->sound_widget->ui->active_widget_id);
+        if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) return;
+      }
+      int percent = (int)(((vol - min) * 100) / (max - min));
+      pthread_mutex_lock(&sound_mutex);
+      s->sound_data.microphone = percent;
+      if (s->sound_widget) {
+        task_data_t* task_data = malloc(sizeof(task_data_t));
+        task_data->ui = s->sound_widget->ui;
+        lf_task_enqueue(rerender_snd_task, task_data);
+      }
+      pthread_mutex_unlock(&sound_mutex);
+    }
+  }
+
+}
 void* alsalisten(void *arg) {
   state_t* s = (state_t *)arg;
 
+  alsahandleui(s);
   while (1) {
     if (poll(s->sndpfds, s->sndpollcount, -1) > 0) {
       snd_mixer_handle_events(s->sndhandle);
-
-      {
-        // --- MASTER VOLUME (Playback) ---
-        long min, max, vol;
-        int pswitch;
-        snd_mixer_selem_get_playback_volume_range(s->sndelem_master, &min, &max);
-        snd_mixer_selem_get_playback_volume(s->sndelem_master, SND_MIXER_SCHN_FRONT_LEFT, &vol);
-        snd_mixer_selem_get_playback_switch(s->sndelem_master, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
-        bool volmuted_before = s->sound_data.volmuted;
-        s->sound_data.volmuted = pswitch == 0;
-        if (s->sound_data.volmuted) {
-          s->sound_data.volume_before = s->sound_data.volume;
-          s->sound_data.volume = 0;
-          if(s->ui) {
-            task_data_t* task_data = malloc(sizeof(task_data_t));
-            task_data->ui = s->ui;
-            lf_task_enqueue(rerender_util_task, task_data);
-          }
-        }
-        if (volmuted_before != s->sound_data.volmuted) {
-          pthread_mutex_lock(&sound_mutex);
-          if (s->sound_widget) {
-            task_data_t* task_data = malloc(sizeof(task_data_t));
-            task_data->ui = s->sound_widget->ui;
-            lf_task_enqueue(rerender_snd_task, task_data);
-          }
-          pthread_mutex_unlock(&sound_mutex);
-        } 
-        if (max - min > 0 && pswitch != 0) {
-          if (s->sound_widget) {
-            lf_widget_t* active_widget = lf_widget_from_id(
-              s->sound_widget->ui, 
-              s->sound_widget->ui->root, 
-              s->sound_widget->ui->active_widget_id);
-            if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
-          }
-          int percent = (int)(((vol - min) * 100) / (max - min));
-          pthread_mutex_lock(&sound_mutex);
-          s->sound_data.volume = percent;
-          if (s->sound_widget) {
-            task_data_t* task_data = malloc(sizeof(task_data_t));
-            task_data->ui = s->sound_widget->ui;
-            lf_task_enqueue(rerender_snd_task, task_data);
-          }
-          if(s->ui) {
-            task_data_t* task_data = malloc(sizeof(task_data_t));
-            task_data->ui = s->ui;
-            lf_task_enqueue(rerender_util_task, task_data);
-          }
-          pthread_mutex_unlock(&sound_mutex);
-        }
-      }
-
-      {
-        // --- CAPTURE VOLUME (Mic) ---
-        long min, max, vol;
-        int pswitch;
-        snd_mixer_selem_get_capture_volume_range(s->sndelem_capture, &min, &max);
-        snd_mixer_selem_get_capture_volume(s->sndelem_capture, SND_MIXER_SCHN_FRONT_LEFT, &vol);
-        snd_mixer_selem_get_capture_switch(s->sndelem_capture, SND_MIXER_SCHN_FRONT_LEFT, &pswitch);
-        bool micmuted_before = s->sound_data.micmuted;
-        s->sound_data.micmuted = pswitch == 0;
-        if (s->sound_data.micmuted) {
-          s->sound_data.microphone_before = s->sound_data.microphone;
-          s->sound_data.microphone = 0;
-        }
-        if (micmuted_before != s->sound_data.micmuted) {
-          pthread_mutex_lock(&sound_mutex);
-          if (s->sound_widget) {
-            task_data_t* task_data = malloc(sizeof(task_data_t));
-            task_data->ui = s->sound_widget->ui;
-            lf_task_enqueue(rerender_snd_task, task_data);
-          }
-          pthread_mutex_unlock(&sound_mutex);
-        } else if (max - min > 0 && pswitch != 0) {
-          if (s->sound_widget) {
-            lf_widget_t* active_widget = lf_widget_from_id(
-              s->sound_widget->ui, 
-              s->sound_widget->ui->root, 
-              s->sound_widget->ui->active_widget_id);
-            if (active_widget && active_widget->type == LF_WIDGET_TYPE_SLIDER) continue;
-          }
-          int percent = (int)(((vol - min) * 100) / (max - min));
-          pthread_mutex_lock(&sound_mutex);
-          s->sound_data.microphone = percent;
-          if (s->sound_widget) {
-            task_data_t* task_data = malloc(sizeof(task_data_t));
-            task_data->ui = s->sound_widget->ui;
-            lf_task_enqueue(rerender_snd_task, task_data);
-          }
-          pthread_mutex_unlock(&sound_mutex);
-        }
-      }
+      alsahandleui(s);
     }
   }
 

@@ -295,14 +295,15 @@ void leaveutilbtn(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_component_rerender(ui, uiutil);
 }
 
-lf_button_t* utilbtn(const char* text, bool set_color) {
+lf_button_t* utilbtn(const char* text, bool set_color, bool set_width) {
   lf_button_t* btn = lf_button(s.ui);
   lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius_percent, 30);
   lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
   ((lf_button_t*)lf_crnt(s.ui))->on_enter = hoverutilbtn;
   ((lf_button_t*)lf_crnt(s.ui))->on_leave = leaveutilbtn;
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
-  lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 30);
+  if(set_width)
+    lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 30);
   if(set_color)
     lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_NO_COLOR);
   lf_text_t* txt = lf_text_h4(s.ui, text);
@@ -326,6 +327,46 @@ void btrybtnpresss(lf_ui_state_t* ui, lf_widget_t* widget) {
   togglepopup(s.battery_widget);
 }
 
+const char* getbatteryicon(void) {
+  int total_percent = 0;
+  int max_total = 0;
+  int is_charging = 0;
+  int valid_bats = 0;
+
+  for (int i = 0; i < s.nbatteries; ++i) {
+    if (strncmp(s.batteries[i].name, "BAT", 3) == 0) {
+      total_percent += s.batteries[i].last_percent;
+      max_total += 100;
+      if (s.batteries[i].status == BatteryStatusCharging) {
+        is_charging = 1;
+      }
+      ++valid_bats;
+    }
+  }
+
+  if (valid_bats == 0) {
+    return "󱉝";
+  }
+
+  int combined_percent = (total_percent * 100) / max_total;
+
+  const char* level = "";
+  if (combined_percent >= 75)
+    level = "";
+  else if (combined_percent >= 50)
+    level = "";
+  else if (combined_percent >= 25)
+    level = "";
+  else if (combined_percent >= 5)
+    level = "";
+
+  const char* prefix = is_charging ? "󱐋" : "";
+
+  static char icon[16];
+  snprintf(icon, sizeof(icon), "%s%s", prefix, level);
+  return icon;
+}
+
 void uiutil(lf_ui_state_t* ui) {
   s.div_util = lf_div(s.ui);
   lf_widget_set_pos_x_absolute_percent(lf_crnt(s.ui), 100);
@@ -334,12 +375,12 @@ void uiutil(lf_ui_state_t* ui) {
   lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
 
   {
-    lf_button_t* btn = utilbtn("", true);
+    lf_button_t* btn = utilbtn("", true, true);
     btn->on_click = soundbtnpress;
   }
 
   {
-    lf_button_t* btn = utilbtn(s.cmdoutputs[CmdBattery], true);
+    lf_button_t* btn = utilbtn(getbatteryicon(), true, false);
     btn->on_click = btrybtnpresss;
   }
   {
@@ -347,11 +388,11 @@ void uiutil(lf_ui_state_t* ui) {
     if(s.sound_data.volume >= 50)    {  icon = ""; }
     else if(s.sound_data.volume > 0) {  icon = ""; } 
     else {  icon = ""; }
-    lf_button_t* btn = utilbtn(icon,  true);
+    lf_button_t* btn = utilbtn(icon,  true, true);
     btn->on_click = soundbtnpress;
   }
   {
-    lf_button_t* btn = utilbtn("⏻", false);
+    lf_button_t* btn = utilbtn("⏻", false, true);
     lf_style_widget_prop_color(s.ui, &btn->base, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 20.0));
   }
 

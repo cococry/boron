@@ -1,22 +1,38 @@
-
 #!/bin/bash
-# Get battery information using upower
-battery_info=$(upower -i /org/freedesktop/UPower/devices/battery_BAT0 2>/dev/null)
 
-# Check if the device has a battery
-if ! ls /sys/class/power_supply/BAT* 1> /dev/null 2>&1; then
+# Initialize variables
+total_capacity=0
+battery_count=0
+charging=0
+
+# Loop over all battery devices
+for battery in /sys/class/power_supply/BAT*; do
+    # Skip if it's not a directory
+    [ -d "$battery" ] || continue
+
+    # Read capacity and status
+    capacity=$(cat "$battery/capacity")
+    status=$(cat "$battery/status")
+
+    # Accumulate total capacity and count
+    total_capacity=$((total_capacity + capacity))
+    battery_count=$((battery_count + 1))
+
+    # Check if any battery is charging
+    if [ "$status" = "Charging" ]; then
+        charging=1
+    fi
+done
+
+# If no batteries found, assume 100%
+if [ "$battery_count" -eq 0 ]; then
     battery=100
 else
-    # Extract the battery percentage
-    battery=$(echo "$battery_info" | grep -E 'percentage' | awk '{print $2}' | tr -d '%')
-
-    # If the battery is close to 100%, round it up
-    if [ "$battery" -ge 99 ]; then
-        battery=100
-    fi
+    # Calculate average battery percent (rounded)
+    battery=$((total_capacity / battery_count))
 fi
 
-# Determine the appropriate icon based on the battery percentage
+# Determine the battery icon
 if [ "$battery" -ge 80 ]; then
     icon=""
 elif [ "$battery" -ge 60 ]; then
@@ -29,5 +45,10 @@ else
     icon=""
 fi
 
-# Display the icon with the battery percentage
+# Prepend lightning icon if any battery is charging
+if [ "$charging" -eq 1 ]; then
+    icon="󱐋$icon"
+fi
+
+# Output the final icon
 echo "$icon"

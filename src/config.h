@@ -57,9 +57,19 @@ typedef struct {
   bool volmuted;
 } sound_data_t;
 
+typedef enum {
+  BatteryStatusUnknown = 0,
+  BatteryStatusCharging,
+  BatteryStatusDischarging,
+  BatteryStatusFull,
+  BatteryStatusNotCharging,
+  BatteryStatusCount,
+} battery_status_t;
+
 typedef struct {
   char name[MAX_NAME_LEN];
   int32_t last_percent;
+  battery_status_t status;
 } battery_data_t;
 
 #define MAX_BATTERIES 16
