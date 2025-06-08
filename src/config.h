@@ -102,7 +102,7 @@ typedef struct {
   struct pollfd *sndpfds;
   int32_t sndpollcount;
 
-  pv_widget_t* sound_widget, *battery_widget;
+  pv_widget_t* sound_widget, *battery_widget, *poweroff_widget;
 
   sound_data_t sound_data; 
 
@@ -133,7 +133,7 @@ static const char*      barfont             = "Arimo Nerd Font";
 static const int32_t    barmon              = -1;
 static const barmode_t  barmode             = BarTop; 
 static const uint32_t   barmargin_vert      = 20;
-static const uint32_t   barmargin_horz      = 300;
+static const uint32_t   barmargin_horz      = 150;
 static const uint32_t   barsize             = 50;
 static const uint32_t   barborderwidth      = 0;
 static const uint32_t   barbordercolor      = 0x0;

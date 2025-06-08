@@ -263,8 +263,13 @@ btrywidget(lf_ui_state_t* ui) {
 
     char icon[16];
     int32_t percent = s.batteries[i].last_percent;
-    const char* prefix = s.batteries[i].status == BatteryStatusCharging ? "󱐋" : "";
+    const char* prefix = s.batteries[i].status == BatteryStatusCharging ? "󱐋" : " ";
+    if(percent == -1) {
+      prefix = " ";
+      percent = 0;
+    }
     const char* level = "";
+
 
     if (percent >= 75)
       level = "";
@@ -295,7 +300,7 @@ btrywidget(lf_ui_state_t* ui) {
         ui, lf_crnt(ui), margin_left, ui->theme->text_props.margin_left);
     }
     char buf[32];
-    sprintf(buf, "%i", s.batteries[i].last_percent);
+    sprintf(buf, "%i", percent); 
 
     lf_grower(ui);
 

@@ -1,4 +1,5 @@
 #include "battery.h"
+#include "power.h"
 #include <leif/color.h>
 #include <leif/layout.h>
 #include <leif/ui_core.h>
@@ -6,15 +7,20 @@
 #include <leif/widget.h>
 #include <leif/win.h>
 #include <podvig/podvig.h>
+#include <ragnar/api.h>
 #include <runara/runara.h>
 
 #include <leif/ez_api.h>
 
 
+static void searchbtnpress(lf_ui_state_t* ui, lf_widget_t* widget);
+
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/Xinerama.h>
 
+static lf_button_t* 
+utilbtn(const char* text, bool set_color, bool set_width);
 
 static void soundwidget(lf_ui_state_t* ui);
 
@@ -250,6 +256,9 @@ cog_leave(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_component_rerender(ui, uidesktops);
 }
 
+void newdesktop(lf_ui_state_t* ui, lf_widget_t* widget) {
+  rg_cmd_switch_desktop(s.numdesktops + 1);
+}
 void uidesktops(lf_ui_state_t* ui) {
   s.div_desktops = lf_div(s.ui);
   lf_widget_set_pos_x_absolute_percent(lf_crnt(s.ui), 0);
@@ -265,13 +274,28 @@ void uidesktops(lf_ui_state_t* ui) {
   lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
 
-  lf_text_h2(s.ui, "󰣇");
-  lf_style_widget_prop(s.ui, lf_crnt(s.ui), margin_right, 20);
+  lf_button_t* btn = utilbtn("", false, true);
+  
+  lf_style_widget_prop(s.ui, &btn->base, margin_right, 15); 
+  lf_style_widget_prop_color(s.ui, &btn->base, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 20.0));
+  btn->on_click = searchbtnpress;
   for(uint32_t i = 0; i < s.numdesktops; i++) {
     bar_desktop_design(s.ui, i, s.crntdesktop, s.desktopnames[i]);
   }
+
+
   lf_div_end(s.ui);
 
+
+  
+  lf_button_t* addbtn = lf_button(s.ui);
+  addbtn->on_click = newdesktop;
+  addbtn->base.visible = s.numdesktops < 8;
+  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_NO_COLOR);
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, LF_WHITE);
+  lf_text_sized(s.ui, "+", 24);
+  lf_button_end(s.ui);
   lf_div_end(s.ui);
 }
 
@@ -299,8 +323,10 @@ lf_button_t* utilbtn(const char* text, bool set_color, bool set_width) {
   lf_button_t* btn = lf_button(s.ui);
   lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius_percent, 30);
   lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
+  if(set_color) {
   ((lf_button_t*)lf_crnt(s.ui))->on_enter = hoverutilbtn;
   ((lf_button_t*)lf_crnt(s.ui))->on_leave = leaveutilbtn;
+  }
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
   if(set_width)
     lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 30);
@@ -322,6 +348,12 @@ void togglepopup(pv_widget_t* popup) {
 void soundbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
   togglepopup(s.sound_widget);
 }
+void searchbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
+  runcmd("~/.config/rofi/launchers/type-6/launcher.sh &");
+}
+void powerbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
+  togglepopup(s.poweroff_widget);
+}
 
 void btrybtnpresss(lf_ui_state_t* ui, lf_widget_t* widget) {
   togglepopup(s.battery_widget);
@@ -335,7 +367,11 @@ const char* getbatteryicon(void) {
 
   for (int i = 0; i < s.nbatteries; ++i) {
     if (strncmp(s.batteries[i].name, "BAT", 3) == 0) {
+      if(s.batteries[i].last_percent == -1) {
+        total_percent += 100;
+      } else {
       total_percent += s.batteries[i].last_percent;
+      }
       max_total += 100;
       if (s.batteries[i].status == BatteryStatusCharging) {
         is_charging = 1;
@@ -394,6 +430,7 @@ void uiutil(lf_ui_state_t* ui) {
   {
     lf_button_t* btn = utilbtn("⏻", false, true);
     lf_style_widget_prop_color(s.ui, &btn->base, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 20.0));
+    btn->on_click = powerbtnpress;
   }
 
 
@@ -616,7 +653,6 @@ int main(void) {
     fail("cannot initialize libleif windowing backend.");
   }
 
-
   if(!sndsetup()) return 1;
   if(!btrysetup()) return 1;
   
@@ -642,6 +678,7 @@ int main(void) {
 
   if(!sndcreatewidget(win)) return 1;
   if(!btrycreatewidget(win)) return 1;
+  if(!powercreatewidget(win)) return 1;
 
    uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
 
