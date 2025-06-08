@@ -257,7 +257,7 @@ cog_leave(lf_ui_state_t* ui, lf_widget_t* widget) {
 }
 
 void newdesktop(lf_ui_state_t* ui, lf_widget_t* widget) {
-  rg_cmd_switch_desktop(s.numdesktops + 1);
+  rg_cmd_switch_desktop(s.numdesktops);
 }
 void uidesktops(lf_ui_state_t* ui) {
   s.div_desktops = lf_div(s.ui);
