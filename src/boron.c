@@ -1,4 +1,5 @@
 #include "battery.h"
+#include "brightness.h"
 #include "power.h"
 #include <leif/color.h>
 #include <leif/layout.h>
@@ -348,6 +349,9 @@ void togglepopup(pv_widget_t* popup) {
 void soundbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
   togglepopup(s.sound_widget);
 }
+void brightnessbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
+  togglepopup(s.brightness_widget);
+}
 void searchbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
   runcmd("~/.config/rofi/launchers/type-6/launcher.sh &");
 }
@@ -413,6 +417,10 @@ void uiutil(lf_ui_state_t* ui) {
   {
     lf_button_t* btn = utilbtn("", true, true);
     btn->on_click = soundbtnpress;
+  }
+  {
+    lf_button_t* btn = utilbtn("", true, true);
+    btn->on_click = brightnessbtnpress;
   }
 
   {
@@ -655,6 +663,7 @@ int main(void) {
 
   if(!sndsetup()) return 1;
   if(!btrysetup()) return 1;
+  if(!brightnesssetup()) return 1;
   
   lf_window_t win = createuiwin(&s);
 
@@ -675,10 +684,13 @@ int main(void) {
                              .a = bar_alpha 
                              }));
 
+  s.brightness = 75;
+  s.nightshift = 50;
 
   if(!sndcreatewidget(win)) return 1;
   if(!btrycreatewidget(win)) return 1;
   if(!powercreatewidget(win)) return 1;
+  if(!brightnesscreatewidget(win)) return 1;
 
    uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
 

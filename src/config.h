@@ -102,12 +102,15 @@ typedef struct {
   struct pollfd *sndpfds;
   int32_t sndpollcount;
 
-  pv_widget_t* sound_widget, *battery_widget, *poweroff_widget;
+  pv_widget_t* sound_widget, *battery_widget, *poweroff_widget, *brightness_widget;
 
   sound_data_t sound_data; 
 
   battery_data_t batteries[MAX_BATTERIES];
   uint32_t nbatteries;
+
+  float brightness, nightshift, last_nightshift;
+  bool usingnightshift;
 } state_t;
 
 typedef enum {

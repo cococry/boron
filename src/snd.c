@@ -60,9 +60,8 @@ void handlemicrophoneslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) 
   lf_component_rerender(s.sound_widget->ui, soundwidget);
 }
 
-lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val){
+static lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val){
   lf_slider_t* slider = lf_slider(ui, val, 0, 100);
-  //lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
   slider->handle_props.color = LF_WHITE;
   slider->_initial_handle_props = slider->handle_props;
   lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 60));
@@ -74,6 +73,7 @@ lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val){
   slider->_initial_handle_props.border_width = 0; 
   slider->handle_props = slider->_initial_handle_props;
   lf_style_widget_prop(ui, lf_crnt(ui), margin_left, 20);
+  lf_slider_end(ui);
   return slider;
 }
 
@@ -130,7 +130,6 @@ soundbutton(lf_ui_state_t* ui, float val) {
   lf_button_end(ui);
 
   return btn;
-
 } 
 
 void soundwidget(lf_ui_state_t* ui) {

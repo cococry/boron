@@ -19,6 +19,7 @@ void rebootclick(lf_ui_state_t* ui, lf_widget_t* widget) {
 void poweroffclick(lf_ui_state_t* ui, lf_widget_t* widget) {
   pv_widget_hide(s.poweroff_widget);
   runcmd("poweroff");
+  printf("Power off.\n");
 }
 void logoutclick(lf_ui_state_t* ui, lf_widget_t* widget) {
   pv_widget_hide(s.poweroff_widget);

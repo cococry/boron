@@ -348,7 +348,7 @@ btrycreatewidget(lf_window_t barwin) {
     s.pvstate, "boron_battery_popup", btrywidget,
     s.bararea.x + s.bararea.width - 300 - 50, 
     s.bararea.y + s.bararea.height + 10,
-    300, 170);
+    300, 200);
 
 
   pv_widget_set_popup_of(s.pvstate, s.battery_widget, barwin);
