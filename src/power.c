@@ -121,7 +121,8 @@ powercreatewidget(lf_window_t barwin) {
   lf_widget_set_font_style(s.poweroff_widget->ui, s.poweroff_widget->ui->root, LF_FONT_STYLE_REGULAR);
 
   pv_widget_hide(s.poweroff_widget);
-  pv_widget_set_animation(s.poweroff_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
+  if(s.have_popup_anims)
+    pv_widget_set_animation(s.poweroff_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
 
   return true;
 }

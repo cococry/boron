@@ -3,6 +3,7 @@
 #include <leif/ez_api.h>
 #include <leif/layout.h>
 #include <leif/task.h>
+#include <leif/widget.h>
 #include <pthread.h>
 
 static pthread_mutex_t sound_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -60,27 +61,45 @@ void handlemicrophoneslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) 
   lf_component_rerender(s.sound_widget->ui, soundwidget);
 }
 
-static lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val){
-  lf_slider_t* slider = lf_slider(ui, val, 0, 100);
+static lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val, char* icon){
+  lf_slider_t* slider = lf_slider(ui, val, 0, 100); 
+  if(!slider->_held) {
+  lf_widget_set_sizing(lf_crnt(ui), LF_SIZING_GROW);
+  slider->base._fixed_width = false;
+  slider->base._fixed_height = false;
   slider->handle_props.color = LF_WHITE;
   slider->_initial_handle_props = slider->handle_props;
   lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 60));
   lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
-  slider->base.container.size.y = 7.5;
-  slider->handle.size.x = 7.5;
-  slider->handle.size.y = 7.5;
-  slider->_initial_handle_props.corner_radius = 7.5f / 2;
+  lf_style_widget_prop(ui, lf_crnt(ui), margin_bottom, 15); 
+  slider->base.container.size.y = 15;
+  slider->handle.size.x = 15;
+  slider->handle.size.y = 15;
+  slider->_initial_handle_props.corner_radius = 30 / 2.0f; 
+  slider->_initial_handle_props.color = lf_color_from_hex(barcolorforeground); 
   slider->_initial_handle_props.border_width = 0; 
+  slider->_initial_handle_props.padding_left = 7.5; 
+  slider->_initial_handle_props.padding_right = 7.5; 
+  slider->_initial_handle_props.padding_top = 7.5; 
+  slider->_initial_handle_props.padding_bottom = 7.5; 
   slider->handle_props = slider->_initial_handle_props;
-  lf_style_widget_prop(ui, lf_crnt(ui), margin_left, 20);
+  lf_widget_set_padding(ui, lf_crnt(ui), 7.5);
+  }
+
+  lf_text_t* text = lf_text_p(ui, icon);
+  lf_widget_set_margin(ui, lf_crnt(ui), 0);
+  lf_style_widget_prop(ui, lf_crnt(ui), margin_left, 5);
+  lf_widget_set_padding(ui, lf_crnt(ui), 0);
+  lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, LF_BLACK);
+
   lf_slider_end(ui);
+
   return slider;
+
 }
 
 
 void mutemic(lf_ui_state_t* ui, lf_widget_t* widget) {
-  char buf[32];
-  sprintf(buf, "amixer sset Capture toggle"); 
   s.sound_data.micmuted = !s.sound_data.micmuted;
   if(s.sound_data.micmuted) {
     s.sound_data.microphone_before = s.sound_data.microphone;
@@ -88,13 +107,13 @@ void mutemic(lf_ui_state_t* ui, lf_widget_t* widget) {
   } else {
     s.sound_data.microphone = s.sound_data.microphone_before;
   }
-  lf_component_rerender(s.sound_widget->ui, soundwidget); 
+  char buf[32];
+  sprintf(buf, "amixer sset Capture toggle"); 
   runcmd(buf);
+  lf_component_rerender(s.sound_widget->ui, soundwidget); 
 }
 
 void mutevolume(lf_ui_state_t* ui, lf_widget_t* widget) {
-  char buf[32];
-  sprintf(buf, "amixer sset Master toggle"); 
   s.sound_data.volmuted = !s.sound_data.volmuted;
   if(s.sound_data.volmuted) {
     s.sound_data.volume_before = s.sound_data.volume;
@@ -102,8 +121,10 @@ void mutevolume(lf_ui_state_t* ui, lf_widget_t* widget) {
   } else {
     s.sound_data.volume = s.sound_data.volume_before;
   }
-  lf_component_rerender(s.sound_widget->ui, soundwidget); 
+  char buf[32];
+  sprintf(buf, "amixer sset Master toggle"); 
   runcmd(buf);
+  lf_component_rerender(s.sound_widget->ui, soundwidget); 
 }
 
 lf_button_t*
@@ -134,13 +155,15 @@ soundbutton(lf_ui_state_t* ui, float val) {
 
 void soundwidget(lf_ui_state_t* ui) {
   lf_div(ui)->base.scrollable = false;
-  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 10); 
-  lf_style_widget_prop_color(ui, lf_crnt(ui), border_color, lf_color_from_hex(0xcccccc)); 
+  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20); 
+  lf_style_widget_prop_color(ui, lf_crnt(ui), border_color, lf_color_from_hex(0x1c1c1c)); 
   lf_style_widget_prop(ui, lf_crnt(ui), border_width, 2); 
   lf_widget_set_fixed_height_percent(ui, lf_crnt(ui), 100.0f);
   lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
+  lf_widget_set_padding(ui, lf_crnt(ui), 15);
 
   lf_text_h4(ui, " System Volume");
+  lf_style_widget_prop(ui, lf_crnt(ui), margin_bottom, -10);
   lf_widget_set_font_style(ui, lf_crnt(ui), LF_FONT_STYLE_BOLD);
   lf_div(ui);
   lf_widget_set_margin(ui, lf_crnt(ui), 0);
@@ -148,12 +171,18 @@ void soundwidget(lf_ui_state_t* ui) {
   lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_HORIZONTAL);
   lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_HORIZONTAL | LF_ALIGN_CENTER_VERTICAL);
 
-  soundbutton(ui, s.sound_data.volume)->on_click = mutevolume;
-  volumeslider(ui, &s.sound_data.volume)->on_slide = handlevolumelsider;
+
+  char* icon =  "";
+  if(s.sound_data.volume >= 50)    {  icon = ""; }
+  else if(s.sound_data.volume > 0) {  icon = ""; } 
+  else {  icon = ""; }
+  volumeslider(ui, &s.sound_data.volume, icon)->on_slide = handlevolumelsider;
+
 
   lf_div_end(ui);
 
   lf_text_h4(ui, " Microphone");
+  lf_style_widget_prop(ui, lf_crnt(ui), margin_bottom, -10);
   lf_style_widget_prop(ui, lf_crnt(ui), margin_top, 10);
   lf_widget_set_font_style(ui, lf_crnt(ui), LF_FONT_STYLE_BOLD);
   lf_div(ui);
@@ -162,8 +191,12 @@ void soundwidget(lf_ui_state_t* ui) {
   lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_HORIZONTAL);
   lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_HORIZONTAL | LF_ALIGN_CENTER_VERTICAL);
  
-  soundbutton(ui, s.sound_data.microphone)->on_click = mutemic;
-  volumeslider(ui, &s.sound_data.microphone)->on_slide = handlemicrophoneslider;
+  icon =  "";
+  if(s.sound_data.microphone >= 50)    {  icon = ""; }
+  else if(s.sound_data.microphone > 0) {  icon = ""; } 
+  else {  icon = ""; }
+  printf("Mic: %f\n", s.sound_data.microphone);
+  volumeslider(ui, &s.sound_data.microphone, icon)->on_slide = handlemicrophoneslider;
 
   lf_div_end(ui);
 
@@ -366,7 +399,7 @@ sndcreatewidget(lf_window_t barwin) {
     s.pvstate, "boron_sound_popup", soundwidget,
     s.bararea.x + s.bararea.width - 300, 
     s.bararea.y + s.bararea.height + 10,
-    300, 170);
+    300, 180);
 
   pthread_mutex_unlock(&sound_mutex);
 
@@ -375,7 +408,8 @@ sndcreatewidget(lf_window_t barwin) {
   lf_widget_set_font_style(s.sound_widget->ui, s.sound_widget->ui->root, LF_FONT_STYLE_REGULAR);
 
   pv_widget_hide(s.sound_widget);
-  pv_widget_set_animation(s.sound_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
+  if(s.have_popup_anims)
+    pv_widget_set_animation(s.sound_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
 
   return true;
 }

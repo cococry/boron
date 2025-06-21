@@ -111,6 +111,10 @@ typedef struct {
 
   float brightness, nightshift, last_nightshift;
   bool usingnightshift;
+
+  bool have_backlight;
+  bool have_battery;
+  bool have_popup_anims;
 } state_t;
 
 typedef enum {
@@ -135,15 +139,15 @@ extern state_t s;
 static const char*      barfont             = "Arimo Nerd Font";
 static const int32_t    barmon              = -1;
 static const barmode_t  barmode             = BarTop; 
-static const uint32_t   barmargin_vert      = 20;
-static const uint32_t   barmargin_horz      = 150;
+static const uint32_t   barmargin_vert      = 10;
+static const uint32_t   barmargin_horz      = 250;
 static const uint32_t   barsize             = 50;
 static const uint32_t   barborderwidth      = 0;
 static const uint32_t   barbordercolor      = 0x0;
 static const uint32_t   barcolor_window     = 0x0;
 static const uint32_t   bar_alpha           = 0; 
-static const uint32_t   barcolorforeground  = 0xffffff;
-static const uint32_t   barcolorbackground  = 0x111111;
+static const uint32_t   barcolorforeground  = 0xFFEEF2;
+static const uint32_t   barcolorbackground  = 0x040303;
 
 
 void bar_style_widget(lf_ui_state_t* ui, lf_widget_t* widget);

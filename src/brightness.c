@@ -250,7 +250,8 @@ brightnesscreatewidget(lf_window_t barwin) {
   lf_widget_set_font_style(s.brightness_widget->ui, s.brightness_widget->ui->root, LF_FONT_STYLE_REGULAR);
 
   pv_widget_hide(s.brightness_widget);
-  pv_widget_set_animation(s.brightness_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
+  if(s.have_popup_anims)
+    pv_widget_set_animation(s.brightness_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
 
   setbrightnesspercent(&ctx, s.brightness);
   applyredshift(lf_win_get_x11_display(), 

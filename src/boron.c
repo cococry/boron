@@ -276,6 +276,7 @@ void uidesktops(lf_ui_state_t* ui) {
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
 
   lf_button_t* btn = utilbtn("", false, true);
+  lf_style_widget_prop(s.ui, &btn->base, corner_radius_percent, 50); 
   
   lf_style_widget_prop(s.ui, &btn->base, margin_right, 15); 
   lf_style_widget_prop_color(s.ui, &btn->base, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 20.0));
@@ -322,8 +323,6 @@ void leaveutilbtn(lf_ui_state_t* ui, lf_widget_t* widget) {
 
 lf_button_t* utilbtn(const char* text, bool set_color, bool set_width) {
   lf_button_t* btn = lf_button(s.ui);
-  lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius_percent, 30);
-  lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_quad);
   if(set_color) {
   ((lf_button_t*)lf_crnt(s.ui))->on_enter = hoverutilbtn;
   ((lf_button_t*)lf_crnt(s.ui))->on_leave = leaveutilbtn;
@@ -333,6 +332,7 @@ lf_button_t* utilbtn(const char* text, bool set_color, bool set_width) {
     lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 30);
   if(set_color)
     lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_NO_COLOR);
+  lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius_percent, 50);
   lf_text_t* txt = lf_text_h4(s.ui, text);
   lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(barcolorforeground));
   lf_button_end(s.ui);
@@ -418,6 +418,7 @@ void uiutil(lf_ui_state_t* ui) {
     lf_button_t* btn = utilbtn("", true, true);
     btn->on_click = soundbtnpress;
   }
+  if(s.have_backlight)
   {
     lf_button_t* btn = utilbtn("", true, true);
     btn->on_click = brightnessbtnpress;
@@ -437,6 +438,7 @@ void uiutil(lf_ui_state_t* ui) {
   }
   {
     lf_button_t* btn = utilbtn("⏻", false, true);
+    lf_style_widget_prop(s.ui, &btn->base, corner_radius_percent, 50);
     lf_style_widget_prop_color(s.ui, &btn->base, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 20.0));
     btn->on_click = powerbtnpress;
   }
@@ -660,10 +662,16 @@ int main(void) {
   if(lf_windowing_init() != 0) {
     fail("cannot initialize libleif windowing backend.");
   }
+  s.have_backlight = true;
+  s.have_battery = true;
+  s.have_popup_anims = true;
 
   if(!sndsetup()) return 1;
   if(!btrysetup()) return 1;
-  if(!brightnesssetup()) return 1;
+  if(!brightnesssetup()) {
+    printf("boron: problem with initializing backlight driver.\n");
+    s.have_backlight = false;
+  };
   
   lf_window_t win = createuiwin(&s);
 
@@ -690,7 +698,7 @@ int main(void) {
   if(!sndcreatewidget(win)) return 1;
   if(!btrycreatewidget(win)) return 1;
   if(!powercreatewidget(win)) return 1;
-  if(!brightnesscreatewidget(win)) return 1;
+  //if(!brightnesscreatewidget(win)) return 1;
 
    uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
 
