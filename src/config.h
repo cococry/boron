@@ -145,7 +145,7 @@ static const uint32_t   barsize             = 50;
 static const uint32_t   barborderwidth      = 0;
 static const uint32_t   barbordercolor      = 0x0;
 static const uint32_t   barcolor_window     = 0x0;
-static const uint32_t   bar_alpha           = 0; 
+static const uint32_t   bar_alpha           = 255; 
 static const uint32_t   barcolorforeground  = 0xFFEEF2;
 static const uint32_t   barcolorbackground  = 0x040303;
 
@@ -156,10 +156,3 @@ void display_cmd(uint32_t idx);
 
 void bar_layout(lf_ui_state_t* ui);
 
-void bar_desktop_hover(lf_ui_state_t* ui, lf_widget_t* widget);
-
-void bar_desktop_leave(lf_ui_state_t* ui, lf_widget_t* widget);
-
-void bar_desktop_click(lf_ui_state_t* ui, lf_widget_t* widget);
-
-void bar_desktop_design(lf_ui_state_t* ui, uint32_t desktop, uint32_t crntdesktop, const char* name);

@@ -20,8 +20,7 @@ static void searchbtnpress(lf_ui_state_t* ui, lf_widget_t* widget);
 #include <X11/Xatom.h>
 #include <X11/extensions/Xinerama.h>
 
-static lf_button_t* 
-utilbtn(const char* text, bool set_color, bool set_width);
+static lf_button_t* utilbtn(const char* text, bool set_color, bool set_width, pv_widget_t* widget);
 
 static void soundwidget(lf_ui_state_t* ui);
 
@@ -226,7 +225,6 @@ compstrs(const void* a, const void* b) {
   return strcmp(*(const char **)a, *(const char **)b);
 }
 
-
 void 
 querydesktops(state_t* s) {
   uint32_t numdesktopsbefore = s->numdesktops;
@@ -242,63 +240,75 @@ querydesktops(state_t* s) {
 }
 
 
-void
-cog_hover(lf_ui_state_t* ui, lf_widget_t* widget) {
-  lf_style_widget_prop_color(
-    ui, widget, color, 
-    lf_color_dim(lf_color_from_hex(barcolorforeground), 120.0f)
-  );
-  lf_widget_set_prop(s.ui, widget, &widget->props.padding_left, 5);
-  lf_widget_set_prop(s.ui, widget, &widget->props.padding_right, 10);
-}
-
-void 
-cog_leave(lf_ui_state_t* ui, lf_widget_t* widget) {
-  lf_component_rerender(ui, uidesktops);
-}
-
 void newdesktop(lf_ui_state_t* ui, lf_widget_t* widget) {
   rg_cmd_switch_desktop(s.numdesktops);
 }
+
+void bar_desktop_click(lf_ui_state_t* ui, lf_widget_t* widget) {
+  if(!widget->user_data) return;
+  rg_cmd_switch_desktop(*(int32_t*)widget->user_data);
+}
+
 void uidesktops(lf_ui_state_t* ui) {
-  s.div_desktops = lf_div(s.ui);
+  s.div_desktops = lf_div(ui);
   lf_widget_set_pos_x_absolute_percent(lf_crnt(s.ui), 0);
   lf_widget_set_layout(lf_crnt(s.ui), LF_LAYOUT_HORIZONTAL);
   lf_widget_set_sizing(lf_crnt(s.ui), LF_SIZING_FIT_CONTENT);
   lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
-  bar_style_widget(s.ui, lf_crnt(s.ui));
-
-  lf_div(s.ui);
+  
+  s.div_desktops = lf_div(ui);
+  lf_widget_set_pos_x_absolute_percent(lf_crnt(s.ui), 0);
   lf_widget_set_layout(lf_crnt(s.ui), LF_LAYOUT_HORIZONTAL);
-  lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
   lf_widget_set_sizing(lf_crnt(s.ui), LF_SIZING_FIT_CONTENT);
-  lf_widget_set_margin(s.ui, lf_crnt(s.ui), 0);
-  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
+  lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
+  lf_style_widget_prop_color(
+    ui, lf_crnt(ui), color, lf_color_from_hex(0x1c1c1c));
+  lf_widget_set_padding(ui, lf_crnt(ui), 0.0f);
+  lf_style_widget_prop(
+    ui, lf_crnt(ui), padding_left, 5.0f); 
+  lf_style_widget_prop(
+    ui, lf_crnt(ui), padding_right, 5.0f); 
+  lf_style_widget_prop(
+    ui, lf_crnt(ui), corner_radius_percent, 40.0f); 
+  lf_widget_set_fixed_height(ui, lf_crnt(ui), 30.0f);
 
-  lf_button_t* btn = utilbtn("", false, true);
-  lf_style_widget_prop(s.ui, &btn->base, corner_radius_percent, 50); 
-  
-  lf_style_widget_prop(s.ui, &btn->base, margin_right, 15); 
-  lf_style_widget_prop_color(s.ui, &btn->base, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 20.0));
-  btn->on_click = searchbtnpress;
   for(uint32_t i = 0; i < s.numdesktops; i++) {
-    bar_desktop_design(s.ui, i, s.crntdesktop, s.desktopnames[i]);
+    lf_button_t* btn = lf_button(ui);
+    uint32_t* iheap = malloc(sizeof(i));
+    *iheap = i;
+    lf_crnt(ui)->user_data = iheap;
+    btn->on_click = bar_desktop_click;
+    
+    lf_widget_set_fixed_height(ui, lf_crnt(ui), i == s.crntdesktop ? 25 : 15);
+    lf_widget_set_fixed_width(ui, lf_crnt(ui),  i == s.crntdesktop ? 25  : 15);
+      lf_widget_set_padding(ui, lf_crnt(ui), 0);
+    lf_style_widget_prop_color(
+      ui, lf_crnt(ui), color,
+      (i == s.crntdesktop) ? lf_color_dim(lf_color_from_hex(barcolorforeground), 70.0f) : LF_NO_COLOR);
+    lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 30);
+    lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_cubic);
+    btn->hovered_props = lf_crnt(ui)->_component_props; 
+    btn->hovered_props.color = 
+      (i == s.crntdesktop) ? 
+      lf_color_dim(lf_crnt(ui)->_component_props.color, 70.0f) : lf_color_from_hex(0x555555); 
+    if(i != s.crntdesktop) {
+      btn->hovered_props.padding_left = 5; 
+      btn->hovered_props.padding_right = 5; 
+      btn->hovered_props.padding_top = 5; 
+      btn->hovered_props.padding_bottom = 5; 
+    }
+    lf_text_h4(ui, s.desktopnames[i]);
+    
+    lf_widget_set_font_style(ui, lf_crnt(ui), i == s.crntdesktop ? LF_FONT_STYLE_BOLD : LF_FONT_STYLE_REGULAR);
+    lf_style_widget_prop_color(ui, lf_crnt(ui), text_color,
+                               (i == s.crntdesktop) ? LF_BLACK : LF_WHITE); 
+    lf_widget_set_transition_props(lf_crnt(ui), 0.3f, lf_ease_out_cubic);
+    lf_button_end(ui);
   }
-
-
-  lf_div_end(s.ui);
-
-
   
-  lf_button_t* addbtn = lf_button(s.ui);
-  addbtn->on_click = newdesktop;
-  addbtn->base.visible = s.numdesktops < 8;
-  lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
-  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_NO_COLOR);
-  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, LF_WHITE);
-  lf_text_sized(s.ui, "+", 24);
-  lf_button_end(s.ui);
-  lf_div_end(s.ui);
+  
+  lf_div_end(ui);
+  lf_div_end(ui);
 }
 
 void uicmds(lf_ui_state_t* ui) {
@@ -321,33 +331,41 @@ void leaveutilbtn(lf_ui_state_t* ui, lf_widget_t* widget) {
   lf_component_rerender(ui, uiutil);
 }
 
-lf_button_t* utilbtn(const char* text, bool set_color, bool set_width) {
+lf_button_t* utilbtn(const char* text, bool set_color, bool set_width, pv_widget_t* widget) {
   lf_button_t* btn = lf_button(s.ui);
-  if(set_color) {
-  ((lf_button_t*)lf_crnt(s.ui))->on_enter = hoverutilbtn;
-  ((lf_button_t*)lf_crnt(s.ui))->on_leave = leaveutilbtn;
-  }
   lf_widget_set_padding(s.ui, lf_crnt(s.ui), 0);
   if(set_width)
     lf_widget_set_fixed_width(s.ui, lf_crnt(s.ui), 30);
-  if(set_color)
-    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, LF_NO_COLOR);
+  if(set_color) {
+    lf_color_t iconcolor = LF_NO_COLOR;
+    if(widget && !widget->data.hidden) {
+      iconcolor = LF_WHITE; 
+    }
+    lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), color, iconcolor);
+  }
   lf_style_widget_prop(s.ui, lf_crnt(s.ui), corner_radius_percent, 50);
+  lf_widget_set_transition_props(lf_crnt(s.ui), 0.2f, lf_ease_out_cubic); 
+  btn->hovered_props = lf_crnt(s.ui)->_component_props;
+  btn->hovered_props.color = lf_color_dim(lf_color_from_hex(barcolorforeground), 30.0);
   lf_text_t* txt = lf_text_h4(s.ui, text);
-  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, lf_color_from_hex(barcolorforeground));
+  lf_style_widget_prop_color(s.ui, lf_crnt(s.ui), text_color, 
+                             widget && !widget->data.hidden ? LF_BLACK : lf_color_from_hex(barcolorforeground));
   lf_button_end(s.ui);
   return btn;
 }
 
 void togglepopup(pv_widget_t* popup) {
+  printf("Popup is %s\n", popup->data.hidden ? "hidden" : "not hidden");
   if(popup->data.hidden) {
     pv_widget_show(popup);
   } else {
     pv_widget_hide(popup); 
   }
+  lf_component_rerender(s.ui, uiutil);
 } 
 void soundbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
   togglepopup(s.sound_widget);
+  printf("Sound button pressed.\n");
 }
 void brightnessbtnpress(lf_ui_state_t* ui, lf_widget_t* widget) {
   togglepopup(s.brightness_widget);
@@ -415,17 +433,17 @@ void uiutil(lf_ui_state_t* ui) {
   lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
 
   {
-    lf_button_t* btn = utilbtn("", true, true);
-    btn->on_click = soundbtnpress;
+    lf_button_t* btn = utilbtn("", true, true, NULL);
+    btn->on_click = NULL;
   }
   if(s.have_backlight)
   {
-    lf_button_t* btn = utilbtn("", true, true);
+    lf_button_t* btn = utilbtn("", true, true, s.brightness_widget);
     btn->on_click = brightnessbtnpress;
   }
 
   {
-    lf_button_t* btn = utilbtn(getbatteryicon(), true, false);
+    lf_button_t* btn = utilbtn(getbatteryicon(), true, false, s.battery_widget);
     btn->on_click = btrybtnpresss;
   }
   {
@@ -433,13 +451,17 @@ void uiutil(lf_ui_state_t* ui) {
     if(s.sound_data.volume >= 50)    {  icon = ""; }
     else if(s.sound_data.volume > 0) {  icon = ""; } 
     else {  icon = ""; }
-    lf_button_t* btn = utilbtn(icon,  true, true);
+    lf_button_t* btn = utilbtn(icon,  true, true, s.sound_widget);
     btn->on_click = soundbtnpress;
   }
   {
-    lf_button_t* btn = utilbtn("⏻", false, true);
+    lf_button_t* btn = utilbtn("⏻", false, true, s.poweroff_widget);
     lf_style_widget_prop(s.ui, &btn->base, corner_radius_percent, 50);
-    lf_style_widget_prop_color(s.ui, &btn->base, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 20.0));
+    if(s.poweroff_widget->data.hidden)
+      lf_style_widget_prop_color(s.ui, &btn->base, color, lf_color_dim(lf_color_from_hex(barcolorforeground), 20.0));
+    btn->hovered_props = btn->base._component_props;
+    btn->hovered_props.color = lf_color_dim(btn->base._rendered_props.color, 80.0);
+
     btn->on_click = powerbtnpress;
   }
 
@@ -704,13 +726,6 @@ int main(void) {
 
   s.cmdoutputs = malloc(sizeof(char*) * ncmds);
   for(uint32_t i = 0; i < ncmds; i++) {
-    if(barcmds[i].update_interval_secs > 0.0f) {
-      lf_timer_t* timer = lf_ui_core_start_timer_looped(s.ui, barcmds[i].update_interval_secs, finish_cmd_timer);
-      uint32_t* user_data = malloc(sizeof(uint32_t));
-      *user_data = i;
-      timer->user_data = user_data; 
-    }
-
     s.cmdoutputs[i] = getcmdoutput(barcmds[i].cmd);
   }
 

@@ -31,11 +31,11 @@ void lockclick(lf_ui_state_t* ui, lf_widget_t* widget) {
 
 void powerwidget(lf_ui_state_t* ui) {
   lf_div(ui)->base.scrollable = false;
-  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 10); 
-  lf_style_widget_prop_color(
-    ui, lf_crnt(ui), border_color, lf_color_from_hex(0xcccccc)); 
+ lf_widget_set_padding(ui, lf_crnt(ui), 15.0f);
+  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20); 
+  lf_style_widget_prop_color(ui, lf_crnt(ui), border_color, lf_color_from_hex(0x1c1c1c)); 
   lf_style_widget_prop(ui, lf_crnt(ui), border_width, 2); 
-  lf_widget_set_padding(ui, lf_crnt(ui), 20.0f);
+
   lf_style_widget_prop_color(
     ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
 
@@ -104,6 +104,10 @@ void powerwidget(lf_ui_state_t* ui) {
   lf_div_end(ui);
 }
 
+static void widgetclose(pv_widget_t* widget) {
+  (void)widget;
+  lf_component_rerender(s.ui, uiutil); 
+}
 bool 
 powercreatewidget(lf_window_t barwin) {
   if(!s.pvstate)
@@ -119,10 +123,10 @@ powercreatewidget(lf_window_t barwin) {
   pv_widget_set_popup_of(s.pvstate, s.poweroff_widget, barwin);
   lf_widget_set_font_family(s.poweroff_widget->ui, s.poweroff_widget->ui->root, barfont);
   lf_widget_set_font_style(s.poweroff_widget->ui, s.poweroff_widget->ui->root, LF_FONT_STYLE_REGULAR);
+  lf_style_widget_prop_color(s.poweroff_widget->ui, s.poweroff_widget->ui->root, color, LF_NO_COLOR); 
 
   pv_widget_hide(s.poweroff_widget);
-  if(s.have_popup_anims)
-    pv_widget_set_animation(s.poweroff_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
 
+  s.poweroff_widget->data.close_cb = widgetclose; 
   return true;
 }

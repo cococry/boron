@@ -237,11 +237,10 @@ void* btrywatch(void *arg) {
 void 
 btrywidget(lf_ui_state_t* ui) {
   lf_div(ui)->base.scrollable = false;
-  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 10); 
-  lf_style_widget_prop_color(
-    ui, lf_crnt(ui), border_color, lf_color_from_hex(0xcccccc)); 
+  lf_widget_set_padding(ui, lf_crnt(ui), 15.0f);
+  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20); 
+  lf_style_widget_prop_color(ui, lf_crnt(ui), border_color, lf_color_from_hex(0x1c1c1c)); 
   lf_style_widget_prop(ui, lf_crnt(ui), border_width, 2); 
-  lf_widget_set_padding(ui, lf_crnt(ui), 20.0f);
   lf_style_widget_prop_color(
     ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
   lf_text_h2(ui, "Battery");
@@ -339,6 +338,11 @@ bool btrysetup(void) {
   return true; 
 }
 
+
+static void widgetclose(pv_widget_t* widget) {
+  (void)widget;
+  lf_component_rerender(s.ui, uiutil); 
+}
 bool 
 btrycreatewidget(lf_window_t barwin) {
   if(!s.pvstate)
@@ -348,17 +352,16 @@ btrycreatewidget(lf_window_t barwin) {
     s.pvstate, "boron_battery_popup", btrywidget,
     s.bararea.x + s.bararea.width - 300 - 50, 
     s.bararea.y + s.bararea.height + 10,
-    300, 110);
-
+    300, 120);
 
   pv_widget_set_popup_of(s.pvstate, s.battery_widget, barwin);
   lf_widget_set_font_family(s.battery_widget->ui, s.battery_widget->ui->root, barfont);
   lf_widget_set_font_style(s.battery_widget->ui, s.battery_widget->ui->root, LF_FONT_STYLE_REGULAR);
+  lf_style_widget_prop_color(s.battery_widget->ui, s.battery_widget->ui->root, color, LF_NO_COLOR); 
 
   pv_widget_hide(s.battery_widget);
-  if(s.have_popup_anims)
-    pv_widget_set_animation(s.battery_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
 
+  s.battery_widget->data.close_cb = widgetclose; 
   return true;
 
 }

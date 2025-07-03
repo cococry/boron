@@ -1,5 +1,6 @@
 #include "config.h"
 #include "util.h"
+#include <leif/color.h>
 #include <leif/ez_api.h>
 #include <leif/layout.h>
 #include <leif/task.h>
@@ -37,9 +38,30 @@ void handlevolumelsider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
     runcmd("amixer sset Master toggle &");
     s.sound_data.volmuted = false;
   }
+  int32_t valint = (int32_t)*val;
+  if(valint % 5 == 0) {
+    if (s.sndelem_master) {
+      long min, max;
+      snd_mixer_selem_get_playback_volume_range(s.sndelem_master, &min, &max);
+      long vol = min + (max - min) * (*val / 100.0f);
+      snd_mixer_selem_set_playback_volume_all(s.sndelem_master, vol);
+    }
+  }
+    lf_component_rerender(s.sound_widget->ui, soundwidget);
+    lf_component_rerender(s.ui, uiutil);
+}
+
+void volsliderclick(lf_ui_state_t* ui, lf_widget_t* widget) {
+  if(s.sound_data.volmuted) {
+    runcmd("amixer sset Master toggle &");
+    s.sound_data.volmuted = false;
+  }
+  printf("Clicked.\n");
   if (s.sndelem_master) {
     long min, max;
-    snd_mixer_selem_get_playback_volume_range(s.sndelem_master, &min, &max);
+    snd_mixer_selem_get_playback_volume_range(
+      s.sndelem_master, &min, &max);
+    float* val = ((lf_slider_t*)widget)->val;
     long vol = min + (max - min) * (*val / 100.0f);
     snd_mixer_selem_set_playback_volume_all(s.sndelem_master, vol);
   }
@@ -76,7 +98,7 @@ static lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val, char* icon){
   slider->handle.size.x = 15;
   slider->handle.size.y = 15;
   slider->_initial_handle_props.corner_radius = 30 / 2.0f; 
-  slider->_initial_handle_props.color = lf_color_from_hex(barcolorforeground); 
+  slider->_initial_handle_props.color = LF_NO_COLOR; 
   slider->_initial_handle_props.border_width = 0; 
   slider->_initial_handle_props.padding_left = 7.5; 
   slider->_initial_handle_props.padding_right = 7.5; 
@@ -158,7 +180,6 @@ void soundwidget(lf_ui_state_t* ui) {
   lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20); 
   lf_style_widget_prop_color(ui, lf_crnt(ui), border_color, lf_color_from_hex(0x1c1c1c)); 
   lf_style_widget_prop(ui, lf_crnt(ui), border_width, 2); 
-  lf_widget_set_fixed_height_percent(ui, lf_crnt(ui), 100.0f);
   lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
   lf_widget_set_padding(ui, lf_crnt(ui), 15);
 
@@ -176,7 +197,9 @@ void soundwidget(lf_ui_state_t* ui) {
   if(s.sound_data.volume >= 50)    {  icon = ""; }
   else if(s.sound_data.volume > 0) {  icon = ""; } 
   else {  icon = ""; }
-  volumeslider(ui, &s.sound_data.volume, icon)->on_slide = handlevolumelsider;
+  lf_slider_t* volslider = volumeslider(ui, &s.sound_data.volume, icon);
+  volslider->on_slide = handlevolumelsider;
+  volslider->on_click = volsliderclick;
 
 
   lf_div_end(ui);
@@ -388,6 +411,11 @@ sndsetup(void) {
   return true;
 }
 
+static void widgetclose(pv_widget_t* widget) {
+  (void)widget;
+  lf_component_rerender(s.ui, uiutil); 
+}
+
 bool 
 sndcreatewidget(lf_window_t barwin) {
   pthread_mutex_lock(&sound_mutex);
@@ -406,10 +434,9 @@ sndcreatewidget(lf_window_t barwin) {
   pv_widget_set_popup_of(s.pvstate, s.sound_widget, barwin);
   lf_widget_set_font_family(s.sound_widget->ui, s.sound_widget->ui->root, barfont);
   lf_widget_set_font_style(s.sound_widget->ui, s.sound_widget->ui->root, LF_FONT_STYLE_REGULAR);
+  lf_style_widget_prop_color(s.sound_widget->ui, s.sound_widget->ui->root, color, LF_NO_COLOR); 
 
   pv_widget_hide(s.sound_widget);
-  if(s.have_popup_anims)
-    pv_widget_set_animation(s.sound_widget, PV_WIDGET_ANIMATION_SLIDE_OUT_VERT, 0.2, lf_ease_out_cubic);
-
+  s.sound_widget->data.close_cb = widgetclose; 
   return true;
 }
