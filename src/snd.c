@@ -5,6 +5,7 @@
 #include <leif/layout.h>
 #include <leif/task.h>
 #include <leif/widget.h>
+#include <podvig/podvig.h>
 #include <pthread.h>
 
 static pthread_mutex_t sound_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -89,7 +90,7 @@ static lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val, char* icon){
   lf_widget_set_sizing(lf_crnt(ui), LF_SIZING_GROW);
   slider->base._fixed_width = false;
   slider->base._fixed_height = false;
-  slider->handle_props.color = LF_WHITE;
+  slider->handle_props.color = lf_color_dim(lf_color_from_hex(barcolorforeground), 170.0f);
   slider->_initial_handle_props = slider->handle_props;
   lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 60));
   lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
@@ -98,7 +99,6 @@ static lf_slider_t* volumeslider(lf_ui_state_t* ui, float* val, char* icon){
   slider->handle.size.x = 15;
   slider->handle.size.y = 15;
   slider->_initial_handle_props.corner_radius = 30 / 2.0f; 
-  slider->_initial_handle_props.color = LF_NO_COLOR; 
   slider->_initial_handle_props.border_width = 0; 
   slider->_initial_handle_props.padding_left = 7.5; 
   slider->_initial_handle_props.padding_right = 7.5; 
@@ -437,6 +437,7 @@ sndcreatewidget(lf_window_t barwin) {
   lf_style_widget_prop_color(s.sound_widget->ui, s.sound_widget->ui->root, color, LF_NO_COLOR); 
 
   pv_widget_hide(s.sound_widget);
+
   s.sound_widget->data.close_cb = widgetclose; 
   return true;
 }

@@ -262,7 +262,7 @@ void uidesktops(lf_ui_state_t* ui) {
   lf_widget_set_sizing(lf_crnt(s.ui), LF_SIZING_FIT_CONTENT);
   lf_widget_set_alignment(lf_crnt(s.ui), LF_ALIGN_CENTER_VERTICAL);
   lf_style_widget_prop_color(
-    ui, lf_crnt(ui), color, lf_color_from_hex(0x1c1c1c));
+    ui, lf_crnt(ui), color, s.numdesktops <= 1 ? LF_NO_COLOR : lf_color_from_hex(0x1c1c1c));
   lf_widget_set_padding(ui, lf_crnt(ui), 0.0f);
   lf_style_widget_prop(
     ui, lf_crnt(ui), padding_left, 5.0f); 
@@ -279,9 +279,13 @@ void uidesktops(lf_ui_state_t* ui) {
     lf_crnt(ui)->user_data = iheap;
     btn->on_click = bar_desktop_click;
     
-    lf_widget_set_fixed_height(ui, lf_crnt(ui), i == s.crntdesktop ? 25 : 15);
+    lf_widget_set_fixed_height(ui, lf_crnt(ui), 25);
     lf_widget_set_fixed_width(ui, lf_crnt(ui),  i == s.crntdesktop ? 25  : 15);
-      lf_widget_set_padding(ui, lf_crnt(ui), 0);
+    lf_widget_set_margin(ui, lf_crnt(ui), 2);
+    lf_style_widget_prop(ui, lf_crnt(ui), padding_left, 3);
+    lf_style_widget_prop(ui, lf_crnt(ui), padding_right, 3);
+    lf_style_widget_prop(ui, lf_crnt(ui), padding_top, 0);
+    lf_style_widget_prop(ui, lf_crnt(ui), padding_bottom, 0);
     lf_style_widget_prop_color(
       ui, lf_crnt(ui), color,
       (i == s.crntdesktop) ? lf_color_dim(lf_color_from_hex(barcolorforeground), 70.0f) : LF_NO_COLOR);
@@ -291,12 +295,6 @@ void uidesktops(lf_ui_state_t* ui) {
     btn->hovered_props.color = 
       (i == s.crntdesktop) ? 
       lf_color_dim(lf_crnt(ui)->_component_props.color, 70.0f) : lf_color_from_hex(0x555555); 
-    if(i != s.crntdesktop) {
-      btn->hovered_props.padding_left = 5; 
-      btn->hovered_props.padding_right = 5; 
-      btn->hovered_props.padding_top = 5; 
-      btn->hovered_props.padding_bottom = 5; 
-    }
     lf_text_h4(ui, s.desktopnames[i]);
     
     lf_widget_set_font_style(ui, lf_crnt(ui), i == s.crntdesktop ? LF_FONT_STYLE_BOLD : LF_FONT_STYLE_REGULAR);

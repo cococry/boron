@@ -7,6 +7,7 @@
 #include <leif/layout.h>
 #include <leif/ui_core.h>
 #include <leif/widget.h>
+#include <leif/widgets/button.h>
 #include <podvig/podvig.h>
 #include <ragnar/api.h>
 extern state_t s;
@@ -18,8 +19,6 @@ void rebootclick(lf_ui_state_t* ui, lf_widget_t* widget) {
 }
 void poweroffclick(lf_ui_state_t* ui, lf_widget_t* widget) {
   pv_widget_hide(s.poweroff_widget);
-  runcmd("poweroff");
-  printf("Power off.\n");
 }
 void logoutclick(lf_ui_state_t* ui, lf_widget_t* widget) {
   pv_widget_hide(s.poweroff_widget);
@@ -31,75 +30,61 @@ void lockclick(lf_ui_state_t* ui, lf_widget_t* widget) {
 
 void powerwidget(lf_ui_state_t* ui) {
   lf_div(ui)->base.scrollable = false;
- lf_widget_set_padding(ui, lf_crnt(ui), 15.0f);
-  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 20); 
-  lf_style_widget_prop_color(ui, lf_crnt(ui), border_color, lf_color_from_hex(0x1c1c1c)); 
-  lf_style_widget_prop(ui, lf_crnt(ui), border_width, 2); 
+  lf_widget_set_padding(ui, lf_crnt(ui), 15.0f);
+  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 10);
+  lf_style_widget_prop_color(ui, lf_crnt(ui), border_color, lf_color_from_hex(0x1c1c1c));
+  lf_style_widget_prop(ui, lf_crnt(ui), border_width, 2);
+  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
+  
+  lf_text_h4(ui, "System Power");
+  lf_widget_set_font_style(ui, lf_crnt(ui), LF_FONT_STYLE_BOLD);
+  lf_style_widget_prop(ui, lf_crnt(ui), margin_left, 10);
 
-  lf_style_widget_prop_color(
-    ui, lf_crnt(ui), color, lf_color_from_hex(barcolorbackground));
+  // Use vertical layout
+  lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_VERTICAL);
 
-  lf_div(ui);
-  lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_HORIZONTAL);
-  lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_HORIZONTAL);
-  lf_button(ui);
-  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(0x952c2d));
-  lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, LF_WHITE); 
-  lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
-  lf_widget_set_fixed_width(ui, lf_crnt(ui), 30);
-  lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
-  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 50.0);
-  lf_widget_set_padding(ui, lf_crnt(ui), 20);
-  ((lf_button_t*)lf_crnt(ui))->on_click = poweroffclick;
-  lf_text_h2(ui, "");
+  struct {
+    char* icon;
+    char* label;
+    void (*handler)(lf_ui_state_t* ui, lf_widget_t* widget);
+    lf_color_t bg;
+  } buttons[] = {
+    { "",  "Power Off", poweroffclick, lf_color_from_hex(0x952c2d) },
+    { "",  "Reboot",    rebootclick,    lf_color_from_hex(0x2f2f2f)},
+    { "󰍃", "Logout",    logoutclick,   lf_color_from_hex(0x2f2f2f)}, 
+    { "󰌾", "Lock",      lockclick,     lf_color_from_hex(0x2f2f2f)}, 
+  };
 
-  lf_button_end(ui);
-
-  lf_button(ui);
-  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(0x2f2f2f));
-  lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, LF_WHITE); 
-  lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
-  lf_widget_set_fixed_width(ui, lf_crnt(ui), 30);
-  lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
-  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 50.0);
-  lf_widget_set_padding(ui, lf_crnt(ui), 20);
-  ((lf_button_t*)lf_crnt(ui))->on_click = rebootclick;
-  lf_text_h2(ui, "");
-
-  lf_button_end(ui);
-  lf_div_end(ui);
+  for (int i = 0; i < 4; i++) {
+    lf_button_t* btn = lf_button(ui);
+    lf_style_widget_prop_color(ui, lf_crnt(ui), color, i == 0 ? lf_color_from_hex(0xcccccc) : LF_NO_COLOR);
+    lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, i == 0 ? LF_BLACK : LF_WHITE);
+    lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 30);
+    lf_widget_set_sizing(lf_crnt(ui), LF_SIZING_FIT_PARENT);
+    lf_widget_set_padding(ui, lf_crnt(ui), 5);
+    lf_widget_set_fixed_height(ui, lf_crnt(ui), 25);
+    if(!ui->_ez._assignment_only) {
+      btn->base._component_props = btn->base.props;
+    }
+    ((lf_button_t*)lf_crnt(ui))->hovered_props = btn->base._component_props;
+    ((lf_button_t*)lf_crnt(ui))->hovered_props.color = buttons[i].bg; 
+    lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
+    ((lf_button_t*)lf_crnt(ui))->on_click = buttons[i].handler;
 
 
-  lf_div(ui);
-  lf_style_widget_prop(ui, lf_crnt(ui), margin_top, -15);
-  lf_widget_set_alignment(lf_crnt(ui), LF_ALIGN_CENTER_HORIZONTAL);
-  lf_widget_set_layout(lf_crnt(ui), LF_LAYOUT_HORIZONTAL);
-  lf_button(ui);
-  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(0x2f2f2f));
-  lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, LF_WHITE); 
-  lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
-  lf_widget_set_fixed_width(ui, lf_crnt(ui), 30);
-  lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
-  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 50.0);
-  lf_widget_set_padding(ui, lf_crnt(ui), 20);
-  ((lf_button_t*)lf_crnt(ui))->on_click = logoutclick;
-  lf_text_h2(ui, "󰍃");
+    // Icon
+    lf_text_h3(ui, buttons[i].icon);
+    lf_widget_set_margin(ui, lf_crnt(ui), 0);
+    
 
-  lf_button_end(ui);
+    // Text
+    lf_text_p(ui, buttons[i].label);
+    lf_widget_set_margin(ui, lf_crnt(ui), 0);
+    lf_style_widget_prop(ui, lf_crnt(ui), margin_left, 15);
 
-  lf_button(ui);
-  lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_from_hex(0x2f2f2f));
-  lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, LF_WHITE); 
-  lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_quad);
-  lf_widget_set_fixed_width(ui, lf_crnt(ui), 30);
-  lf_widget_set_fixed_height(ui, lf_crnt(ui), 30);
-  lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 50.0);
-  lf_widget_set_padding(ui, lf_crnt(ui), 20);
-  ((lf_button_t*)lf_crnt(ui))->on_click = lockclick;
-  lf_text_h2(ui, "󰌾");
-
-  lf_button_end(ui);
-  lf_div_end(ui);
+    lf_grower(ui);
+    lf_button_end(ui);
+  }
 
   lf_div_end(ui);
 }
