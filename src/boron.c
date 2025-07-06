@@ -718,7 +718,7 @@ int main(void) {
   if(!sndcreatewidget(win)) return 1;
   if(!btrycreatewidget(win)) return 1;
   if(!powercreatewidget(win)) return 1;
-  //if(!brightnesscreatewidget(win)) return 1;
+  if(!brightnesscreatewidget(win)) return 1;
 
    uint32_t ncmds = (sizeof barcmds / sizeof barcmds[0]);
 
@@ -737,6 +737,7 @@ int main(void) {
   lf_widget_shape(s.ui, s.ui->root);
 
   while(s.ui->running) {
+    lf_windowing_next_event();
     pv_update(s.pvstate);
     lf_ui_core_next_event(s.ui);
   }

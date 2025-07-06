@@ -38,21 +38,24 @@ static void applyredshift
 
 void 
 handlebrightnessslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
+  int32_t valint = *(int32_t*)val;
+  if(valint % 5 != 0) return;
   setbrightnesspercent(&ctx, *val);
 }
 void 
 handlenightshiftslider(lf_ui_state_t* ui, lf_widget_t* widget, float* val) {
   if(!s.usingnightshift) return;
+  int32_t valint = *(int32_t*)val;
+  if(valint % 5 != 0) return;
   applyredshift(lf_win_get_x11_display(), 
                 gammactx.crtc, gammactx.gamma, gammactx.gamma->size, *val);
 }
 static lf_slider_t* brightnessslider(lf_ui_state_t* ui, float* val, const char* icon) {
-
   lf_slider_t* slider = lf_slider(ui, val, 5, 100); 
   lf_widget_set_sizing(lf_crnt(ui), LF_SIZING_GROW);
   slider->base._fixed_width = false;
   slider->base._fixed_height = false;
-  slider->handle_props.color = LF_WHITE;
+  slider->handle_props.color = LF_NO_COLOR;
   slider->_initial_handle_props = slider->handle_props;
   lf_style_widget_prop_color(ui, lf_crnt(ui), color, lf_color_dim(lf_color_from_hex(barcolorforeground), 60));
   lf_style_widget_prop_color(ui, lf_crnt(ui), text_color, lf_color_from_hex(barcolorforeground));
@@ -108,6 +111,9 @@ void brightnesswidget(lf_ui_state_t* ui) {
   lf_style_widget_prop(ui, lf_crnt(ui), corner_radius_percent, 50.0f);
   lf_style_widget_prop_color(ui, lf_crnt(ui), color, 
                              s.usingnightshift ? LF_WHITE : lf_color_from_hex(0x555555));
+  ((lf_button_t*)lf_crnt(ui))->hovered_props = lf_crnt(ui)->_component_props;
+  ((lf_button_t*)lf_crnt(ui))->hovered_props.color = lf_color_from_hex(0x999999);
+  lf_widget_set_transition_props(lf_crnt(ui), 0.2f, lf_ease_out_cubic);
   lf_text_h3(ui, "󰖔");
   lf_button_end(ui);
 
